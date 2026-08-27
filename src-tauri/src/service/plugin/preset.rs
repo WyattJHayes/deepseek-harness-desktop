@@ -125,7 +125,9 @@ pub(crate) fn bundled_plugin_dir(app_handle: &AppHandle, id: &str) -> Option<Pat
 /// `CARGO_MANIFEST_DIR`（即 `src-tauri`）的上层目录得到，只在开发机成立。
 #[cfg(debug_assertions)]
 fn dev_internal_plugins_dir() -> Option<PathBuf> {
-    let env_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join(".env");
+    let env_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(".env");
     let content = std::fs::read_to_string(env_file).ok()?;
     parse_dev_internal_dir(&content)
 }
@@ -234,7 +236,10 @@ pub(crate) fn preinstall_pending(app_handle: &AppHandle) -> bool {
     if !setting.preinstall_done {
         return true;
     }
-    match (setting.preset_hash.as_deref(), current_preset_hash(app_handle)) {
+    match (
+        setting.preset_hash.as_deref(),
+        current_preset_hash(app_handle),
+    ) {
         (None, Some(_)) => true,
         (Some(prev), Some(cur)) => prev != cur,
         _ => false,
@@ -270,8 +275,7 @@ mod tests {
     #[test]
     fn preset_json_ids_are_unique() {
         let presets = load_presets_for_test();
-        let ids: std::collections::HashSet<&str> =
-            presets.iter().map(|p| p.id.as_str()).collect();
+        let ids: std::collections::HashSet<&str> = presets.iter().map(|p| p.id.as_str()).collect();
         assert_eq!(ids.len(), presets.len(), "preset ids must be unique");
     }
 
@@ -332,11 +336,15 @@ mod tests {
     fn bundled_dir_discovers_nested_layout() {
         // 与 preset 文件一致：先探测 {root}/resources/preset-plugins/<id>
         let dir = std::env::temp_dir().join(format!("dsh-bundled-nested-{}", std::process::id()));
-        let nested = dir.join("resources").join(BUNDLED_PLUGINS_DIR).join("dsh-tauri");
+        let nested = dir
+            .join("resources")
+            .join(BUNDLED_PLUGINS_DIR)
+            .join("dsh-tauri");
         std::fs::create_dir_all(&nested).expect("create temp nested bundled dir");
         std::fs::write(nested.join("package.json"), "{}").expect("write bundle manifest");
 
-        let found = find_bundled_in_root(&dir, "dsh-tauri").expect("nested bundled dir should be found");
+        let found =
+            find_bundled_in_root(&dir, "dsh-tauri").expect("nested bundled dir should be found");
         assert_eq!(found, nested);
 
         std::fs::remove_dir_all(&dir).ok();
@@ -349,7 +357,8 @@ mod tests {
         std::fs::create_dir_all(&flat).expect("create temp flat bundled dir");
         std::fs::write(flat.join("package.json"), "{}").expect("write bundle manifest");
 
-        let found = find_bundled_in_root(&dir, "dsh-tauri").expect("flat bundled dir should be found");
+        let found =
+            find_bundled_in_root(&dir, "dsh-tauri").expect("flat bundled dir should be found");
         assert_eq!(found, flat);
 
         std::fs::remove_dir_all(&dir).ok();
@@ -359,7 +368,8 @@ mod tests {
     fn bundled_dir_requires_package_json() {
         // 无 package.json 的目录不是有效产物（prebuild 未执行）
         let dir = std::env::temp_dir().join(format!("dsh-bundled-empty-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("preset-plugins").join("dsh-tauri")).expect("create empty dir");
+        std::fs::create_dir_all(dir.join("preset-plugins").join("dsh-tauri"))
+            .expect("create empty dir");
         assert!(find_bundled_in_root(&dir, "dsh-tauri").is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -367,7 +377,9 @@ mod tests {
     #[test]
     fn bundled_dep_spec_normalizes_windows_separators() {
         assert_eq!(
-            bundled_dep_spec(std::path::Path::new("C:\\Apps\\dsh\\resources\\preset-plugins\\dsh-tauri")),
+            bundled_dep_spec(std::path::Path::new(
+                "C:\\Apps\\dsh\\resources\\preset-plugins\\dsh-tauri"
+            )),
             "link:C:/Apps/dsh/resources/preset-plugins/dsh-tauri"
         );
         // 尾部斜杠去除（Windows 盘符 C:\ 不会出现，路径恒为子目录）
@@ -426,7 +438,10 @@ mod tests {
     fn dev_internal_dir_unset_when_missing_key_or_empty_value() {
         // 其它键或注释：视为未设置
         assert_eq!(parse_dev_internal_dir("FOO=bar\n"), None);
-        assert_eq!(parse_dev_internal_dir("# DEV_INTERNAL_PLUGINS_DIR=C:/x\n"), None);
+        assert_eq!(
+            parse_dev_internal_dir("# DEV_INTERNAL_PLUGINS_DIR=C:/x\n"),
+            None
+        );
         // 显式置空：同样视为未设置（关闭覆盖）
         assert_eq!(parse_dev_internal_dir("DEV_INTERNAL_PLUGINS_DIR=\n"), None);
     }

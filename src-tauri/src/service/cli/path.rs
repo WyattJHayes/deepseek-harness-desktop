@@ -348,7 +348,9 @@ fn write_user_path(new_value: &str) -> Result<(), String> {
         RegCloseKey(hkey);
 
         if ret != 0 {
-            return Err(format!("failed to write HKCU\\Environment\\Path (error {ret})"));
+            return Err(format!(
+                "failed to write HKCU\\Environment\\Path (error {ret})"
+            ));
         }
         Ok(())
     }
@@ -403,7 +405,9 @@ fn path_contains_token(path_value: &str, token: &str) -> bool {
 fn remove_path_token(path_value: &str, token: &str) -> String {
     let token_lower = token.to_lowercase();
     let unexpanded_lower = token_lower.replace(
-        &std::env::var("LOCALAPPDATA").unwrap_or_default().to_lowercase(),
+        &std::env::var("LOCALAPPDATA")
+            .unwrap_or_default()
+            .to_lowercase(),
         "%localappdata%",
     );
     let kept: Vec<&str> = path_value
@@ -434,9 +438,7 @@ fn inject_shell_rc(app_handle: &AppHandle) -> Result<(), String> {
         .path()
         .home_dir()
         .map_err(|_| "failed to resolve home directory".to_string())?;
-    let block = format!(
-        "{RC_MARK_START}\nexport PATH=\"$HOME/.local/bin:$PATH\"\n{RC_MARK_END}\n"
-    );
+    let block = format!("{RC_MARK_START}\nexport PATH=\"$HOME/.local/bin:$PATH\"\n{RC_MARK_END}\n");
 
     for name in RC_FILES {
         let rc_path = home.join(name);
@@ -627,7 +629,10 @@ mod tests {
         let stale = format!("alias ll='ls -alF'\n{RC_BLOCK}export NVM_DIR=\"$HOME/.nvm\"\n");
         let next = upsert_rc_block(&stale, RC_BLOCK);
         let stripped = strip_rc_block(&next);
-        assert_eq!(stripped, "alias ll='ls -alF'\nexport NVM_DIR=\"$HOME/.nvm\"\n");
+        assert_eq!(
+            stripped,
+            "alias ll='ls -alF'\nexport NVM_DIR=\"$HOME/.nvm\"\n"
+        );
         assert!(next.ends_with(RC_BLOCK));
         assert_eq!(next.matches(RC_MARK_START).count(), 1);
     }

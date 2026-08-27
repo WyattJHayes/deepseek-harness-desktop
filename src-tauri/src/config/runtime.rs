@@ -6,8 +6,8 @@ use tauri::{AppHandle, Manager, Runtime};
 
 use super::constants::*;
 use super::format::get_dsh_service_url;
-use super::{detect_region, Region};
 use super::utils::search_node_binary;
+use super::{detect_region, Region};
 
 /// 获取 App Data 基础目录
 pub fn get_base_dir<R: Runtime>(app_handle: &AppHandle<R>) -> PathBuf {
@@ -43,7 +43,12 @@ fn node_pkg_filename(os: &str, arch: &str) -> Result<String, String> {
 /// Node.js 运行时下载地址
 pub fn get_node_download_url() -> Result<String, String> {
     let filename = node_pkg_filename(env::consts::OS, env::consts::ARCH)?;
-    Ok(format!("{}/{}/{}", node_base_url(detect_region()), NODE_VERSION, filename))
+    Ok(format!(
+        "{}/{}/{}",
+        node_base_url(detect_region()),
+        NODE_VERSION,
+        filename
+    ))
 }
 
 /// 打包的 DeepSeek Harness 发行版下载前缀：恒为 GitHub Release 官方直连，
@@ -103,8 +108,10 @@ pub fn mirror_download_url(asset_url: &str) -> String {
 /// `releases/download/<tag>/`，镜像/直连与平台文件名逻辑与最新版完全一致
 /// （GitHub 的 tag 下载路径是固定的 release 资产地址，可被确定性推导）。
 pub fn get_dsh_download_url_for_tag(tag: &str) -> Result<String, String> {
-    let base = dsh_core_base_url()
-        .replace("releases/latest/download/", &format!("releases/download/{tag}/"));
+    let base = dsh_core_base_url().replace(
+        "releases/latest/download/",
+        &format!("releases/download/{tag}/"),
+    );
     Ok(format!("{}{}", base, dsh_pkg_asset_filename()?))
 }
 
@@ -169,7 +176,10 @@ fn node_version_output(node: &Path) -> Option<std::process::Output> {
     }
     #[cfg(not(windows))]
     {
-        std::process::Command::new(node).arg("--version").output().ok()
+        std::process::Command::new(node)
+            .arg("--version")
+            .output()
+            .ok()
     }
 }
 
@@ -226,7 +236,9 @@ pub fn get_node_install_path(app_handle: &tauri::AppHandle) -> PathBuf {
 
 /// Harness 发行版安装目录
 pub fn get_dsh_install_path<R: Runtime>(app_handle: &AppHandle<R>) -> PathBuf {
-    get_base_dir(app_handle).join("dependencies").join(DSH_CORE_DIR)
+    get_base_dir(app_handle)
+        .join("dependencies")
+        .join(DSH_CORE_DIR)
 }
 
 /// dsh CLI 入口
@@ -236,7 +248,9 @@ pub fn get_dsh_binary_path<R: Runtime>(app_handle: &AppHandle<R>) -> PathBuf {
 
 /// pnpm 安装目录
 pub fn get_pnpm_install_path<R: Runtime>(app_handle: &AppHandle<R>) -> PathBuf {
-    get_base_dir(app_handle).join("dependencies").join(PNPM_CORE_DIR)
+    get_base_dir(app_handle)
+        .join("dependencies")
+        .join(PNPM_CORE_DIR)
 }
 
 /// 捆绑 pnpm CLI 入口（纯 JS 发行，用 node 运行）
@@ -254,7 +268,11 @@ fn pnpm_base_url(region: Region) -> &'static str {
 
 /// pnpm 下载地址（纯 JS 发行，全平台同一 URL）
 pub fn get_pnpm_download_url() -> String {
-    format!("{}pnpm-{}.tgz", pnpm_base_url(detect_region()), PNPM_VERSION)
+    format!(
+        "{}pnpm-{}.tgz",
+        pnpm_base_url(detect_region()),
+        PNPM_VERSION
+    )
 }
 
 /// Windows 免安装 Git 的安装目录。
@@ -328,7 +346,10 @@ fn git_binary_works(binary: &Path) -> bool {
         return false;
     };
     let exec_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    !exec_path.is_empty() && PathBuf::from(exec_path).join("git-remote-https.exe").is_file()
+    !exec_path.is_empty()
+        && PathBuf::from(exec_path)
+            .join("git-remote-https.exe")
+            .is_file()
 }
 
 /// 返回桌面端应注入子进程 PATH 的已选 Git `cmd` 目录。
@@ -479,7 +500,11 @@ pub fn get_dsh_version<R: Runtime>(app_handle: &AppHandle<R>) -> Option<String> 
         .get("dependencies")
         .and_then(|deps| deps.get("@deepseek-ai/dsh"))
         .and_then(|value| value.as_str())
-        .map(|value| value.trim_start_matches(['^', '~', '=', '>', '<']).to_string())
+        .map(|value| {
+            value
+                .trim_start_matches(['^', '~', '=', '>', '<'])
+                .to_string()
+        })
 }
 
 /// 侧边栏展示的运行时/版本/诊断信息
@@ -525,8 +550,16 @@ mod tests {
         // 无论哪个地域，首选源都是 GitHub 官方直连；镜像仅作兜底
         let urls = get_dsh_download_urls().expect("dsh urls");
         assert_eq!(urls.len(), 2);
-        assert!(urls[0].starts_with(DSH_CORE_URL), "first source must be official GitHub: {}", urls[0]);
-        assert!(urls[1].starts_with(DSH_MIRROR_PREFIX), "fallback must be ghfast mirror: {}", urls[1]);
+        assert!(
+            urls[0].starts_with(DSH_CORE_URL),
+            "first source must be official GitHub: {}",
+            urls[0]
+        );
+        assert!(
+            urls[1].starts_with(DSH_MIRROR_PREFIX),
+            "fallback must be ghfast mirror: {}",
+            urls[1]
+        );
         // 两个源的文件名一致（镜像只是换前缀，解压类型判定不受影响）
         let name = |u: &str| u.rsplit('/').next().unwrap_or("").to_string();
         assert_eq!(name(&urls[0]), name(&urls[1]));
@@ -593,12 +626,36 @@ mod tests {
         // 与 nodejs.org dist 布局一致（纯函数测试，不受宿主操作系统限制）
         let cases = [
             // (os, arch, 期望文件名)
-            ("linux", "x86_64", format!("node-{}-linux-x64.tar.gz", NODE_VERSION)),
-            ("linux", "aarch64", format!("node-{}-linux-arm64.tar.gz", NODE_VERSION)),
-            ("windows", "x86_64", format!("node-{}-win-x64.zip", NODE_VERSION)),
-            ("windows", "aarch64", format!("node-{}-win-x64.zip", NODE_VERSION)),
-            ("macos", "aarch64", format!("node-{}-darwin-arm64.tar.gz", NODE_VERSION)),
-            ("macos", "x86_64", format!("node-{}-darwin-x64.tar.gz", NODE_VERSION)),
+            (
+                "linux",
+                "x86_64",
+                format!("node-{}-linux-x64.tar.gz", NODE_VERSION),
+            ),
+            (
+                "linux",
+                "aarch64",
+                format!("node-{}-linux-arm64.tar.gz", NODE_VERSION),
+            ),
+            (
+                "windows",
+                "x86_64",
+                format!("node-{}-win-x64.zip", NODE_VERSION),
+            ),
+            (
+                "windows",
+                "aarch64",
+                format!("node-{}-win-x64.zip", NODE_VERSION),
+            ),
+            (
+                "macos",
+                "aarch64",
+                format!("node-{}-darwin-arm64.tar.gz", NODE_VERSION),
+            ),
+            (
+                "macos",
+                "x86_64",
+                format!("node-{}-darwin-x64.tar.gz", NODE_VERSION),
+            ),
         ];
         for (os, arch, expected) in cases {
             assert_eq!(

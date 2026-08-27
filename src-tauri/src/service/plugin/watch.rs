@@ -308,7 +308,8 @@ mod tests {
     /// 构造临时 profile：package.json + node_modules 下的插件包清单
     /// （tag 用于区分不同测试的临时目录，避免并行执行时互相清理）
     fn build_profile(tag: &str, packages: &[(&str, &str)]) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("dsh-watch-test-{}-{}", tag, std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("dsh-watch-test-{}-{}", tag, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir.join("node_modules")).unwrap();
         let mut manifest = serde_json::json!({
@@ -329,9 +330,8 @@ mod tests {
             }
         }
         manifest["dependencies"] = serde_json::Value::Object(deps);
-        manifest["dsh"]["profile"]["bundles"] = serde_json::Value::Array(
-            bundles.into_iter().map(serde_json::Value::String).collect(),
-        );
+        manifest["dsh"]["profile"]["bundles"] =
+            serde_json::Value::Array(bundles.into_iter().map(serde_json::Value::String).collect());
         std::fs::write(
             dir.join("package.json"),
             serde_json::to_string_pretty(&manifest).unwrap(),
@@ -396,14 +396,8 @@ mod tests {
         let dir = build_profile(
             "fallback",
             &[
-                (
-                    "dsh-at-file",
-                    r#"{"name":"dsh-at-file"}"#,
-                ),
-                (
-                    "dshmarket",
-                    r#"{"name":"dshmarket","dsh":{"bundle":{}}}"#,
-                ),
+                ("dsh-at-file", r#"{"name":"dsh-at-file"}"#),
+                ("dshmarket", r#"{"name":"dshmarket","dsh":{"bundle":{}}}"#),
             ],
         );
         let plugins = parse_plugins(&dir, &presets_for_test());
@@ -427,10 +421,7 @@ mod tests {
                     "dsh-tauri",
                     r#"{"name":"dsh-tauri","version":"0.2.0","description":"bridge"}"#,
                 ),
-                (
-                    "dshmarket",
-                    r#"{"name":"dshmarket","version":"1.13.1"}"#,
-                ),
+                ("dshmarket", r#"{"name":"dshmarket","version":"1.13.1"}"#),
             ],
         );
         let mut presets = presets_for_test();

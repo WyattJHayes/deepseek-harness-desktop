@@ -66,7 +66,10 @@ pub async fn list(app_handle: &AppHandle) -> Vec<HarnessCore> {
     let mut rows: Vec<HarnessCore> = vec![HarnessCore {
         id: "local".to_string(),
         source: CoreSource::Local,
-        version: local.as_ref().map(|c| c.version.clone()).unwrap_or_default(),
+        version: local
+            .as_ref()
+            .map(|c| c.version.clone())
+            .unwrap_or_default(),
         tag: String::new(),
         path: local_bin.clone().unwrap_or_default(),
         dir: local
@@ -98,7 +101,10 @@ pub async fn list(app_handle: &AppHandle) -> Vec<HarnessCore> {
     let tags = match download::fetch_dsh_pkg_tags().await {
         Ok(tags) => tags,
         Err(e) => {
-            log::warn!("Failed to fetch dsh pkg tags ({}), showing only on-disk versions", e);
+            log::warn!(
+                "Failed to fetch dsh pkg tags ({}), showing only on-disk versions",
+                e
+            );
             Vec::new()
         }
     };
@@ -302,13 +308,15 @@ async fn switch_app_version(app_handle: &AppHandle, tag: &str) -> Result<(), Str
                 backup_dir.display()
             ));
         }
-        download::rename_with_retry(&active_dir, &backup_dir).await.map_err(|e| {
-            format!(
-                "CORE_SWITCH_FAILED: {} -> {}: {e}",
-                active_dir.display(),
-                backup_dir.display()
-            )
-        })?;
+        download::rename_with_retry(&active_dir, &backup_dir)
+            .await
+            .map_err(|e| {
+                format!(
+                    "CORE_SWITCH_FAILED: {} -> {}: {e}",
+                    active_dir.display(),
+                    backup_dir.display()
+                )
+            })?;
     }
 
     // 2. 目标版本进入激活位；失败回滚
@@ -372,8 +380,7 @@ pub async fn download_version(app_handle: &AppHandle, tag: &str) -> Result<Harne
     let buffer = download::download_file_from_sources(&tracker, urls)
         .await
         .map_err(|e| format!("CORE_DOWNLOAD_FAILED: {e}"))?;
-    download::verify_sha256(&buffer, &digest)
-        .map_err(|e| format!("CORE_INTEGRITY_FAILED: {e}"))?;
+    download::verify_sha256(&buffer, &digest).map_err(|e| format!("CORE_INTEGRITY_FAILED: {e}"))?;
     tracker.end_phase();
     let name = info
         .asset_url
@@ -401,7 +408,9 @@ pub async fn remove_version(app_handle: &AppHandle, id: &str) -> Result<(), Stri
     fs_guard::validate_id(tag)?;
     let cur_tag = config::get_dsh_pkg_tag(app_handle);
     if cur_tag.as_deref() == Some(tag) && active_source(app_handle) == CoreSource::App {
-        return Err(format!("CORE_ACTIVE_VERSION: cannot remove in-use version {tag}"));
+        return Err(format!(
+            "CORE_ACTIVE_VERSION: cannot remove in-use version {tag}"
+        ));
     }
     let dir = existing_slot_dir(app_handle, tag)
         .ok_or_else(|| format!("CORE_VERSION_NOT_FOUND: {tag}"))?;
@@ -423,7 +432,10 @@ pub async fn remove_version(app_handle: &AppHandle, id: &str) -> Result<(), Stri
 
 /// 解析激活预打包核心的版本号：优先记录 tag（`dsh-<version>-<commit>`），
 /// 解析不出（无 tag 记录/格式不符）时用安装目录清单版本兜底。
-fn active_app_version(active_tag: &Option<String>, manifest_version: Option<String>) -> Option<String> {
+fn active_app_version(
+    active_tag: &Option<String>,
+    manifest_version: Option<String>,
+) -> Option<String> {
     active_tag
         .as_deref()
         .and_then(download::parse_version_from_tag)

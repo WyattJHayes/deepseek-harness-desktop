@@ -1,11 +1,11 @@
-pub mod status;
-pub mod utils;
 pub(crate) mod client_hmr_patch;
 pub(crate) mod renderer_patch;
-pub(crate) mod workspace_patch;
+pub mod status;
+pub mod utils;
 pub(crate) mod win_inspector;
 #[cfg(windows)]
 pub(crate) mod win_spawn;
+pub(crate) mod workspace_patch;
 
 use crate::config;
 use crate::service::download;
@@ -46,14 +46,18 @@ fn owned_process_lock() -> &'static Mutex<Option<OwnedProcess>> {
 /// 记录新持有的 Harness 根进程（Unix，启动成功后调用）。
 #[cfg(not(windows))]
 fn set_owned_process(pid: u32) {
-    let mut guard = owned_process_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = owned_process_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     *guard = Some(OwnedProcess { pid });
 }
 
 /// 若调用方 owns 该进程（Windows 额外存句柄），记录之。
 #[cfg(windows)]
 fn set_owned_process_with_handle(pid: u32, handle: usize) {
-    let mut guard = owned_process_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = owned_process_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     *guard = Some(OwnedProcess { pid, handle });
 }
 
@@ -72,7 +76,9 @@ fn take_owned_process() -> Option<OwnedProcess> {
 /// 属于自己那一条登记，绝不误取/误清「刚启动的新进程」的登记——否则会把它
 /// 当作已退出而错误回落 Status，并把新进程的句柄误关（WARN-6 合并引入的回退）。
 fn take_owned_process_if(pid: u32) -> Option<OwnedProcess> {
-    let mut guard = owned_process_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = owned_process_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     take_owned_process_if_matching(&mut guard, pid)
 }
 
@@ -504,7 +510,9 @@ pub fn sweep_orphan_harness(app_handle: &tauri::AppHandle) {
     // 结束，随后的 PID/端口双重确认自然落空，仅清理陈旧标记。
     terminate_stale_harness_processes(app_handle);
     let pid_file = harness_pid_path(app_handle);
-    let Ok(text) = fs::read_to_string(&pid_file) else { return; };
+    let Ok(text) = fs::read_to_string(&pid_file) else {
+        return;
+    };
     let mut lines = text.lines();
     let (Some(pid), Some(port)) = (
         lines.next().and_then(|l| l.trim().parse::<u32>().ok()),
@@ -627,7 +635,9 @@ fn relaunch_via_shell_escape(app_handle: &tauri::AppHandle) {
             std::process::exit(0);
         }
         Err(e) => {
-            log::warn!("RedirectionGuard(448) detected but explorer spawn failed ({e}), falling back");
+            log::warn!(
+                "RedirectionGuard(448) detected but explorer spawn failed ({e}), falling back"
+            );
         }
     }
 }
@@ -830,8 +840,8 @@ pub async fn launch(app_handle: tauri::AppHandle) -> Result<(), String> {
     // shim 报 "Node.js runtime not found"（issue #121，与 build_plugin_envs
     // 的注入保持一致）。先规范化为绝对路径：相对路径在子进程 CWD 下会解析
     // 到错误位置；已存在（上面校验过）的 node 可安全 canonicalize。
-    let node_abs = std::fs::canonicalize(&node_binary_path)
-        .unwrap_or_else(|_| node_binary_path.clone());
+    let node_abs =
+        std::fs::canonicalize(&node_binary_path).unwrap_or_else(|_| node_binary_path.clone());
     envs.insert(
         "DSH_NODE".to_string(),
         node_abs.to_string_lossy().into_owned(),
@@ -877,7 +887,10 @@ pub async fn launch(app_handle: tauri::AppHandle) -> Result<(), String> {
         let shim_dir = dunce::canonicalize(crate::service::cli::get_bin_dir(&app_handle))
             .unwrap_or_else(|_| crate::service::cli::get_bin_dir(&app_handle));
         if pnpm_abs.parent() != Some(shim_dir.as_path()) {
-            envs.insert("DSH_PNPM".to_string(), pnpm_abs.to_string_lossy().into_owned());
+            envs.insert(
+                "DSH_PNPM".to_string(),
+                pnpm_abs.to_string_lossy().into_owned(),
+            );
         }
     }
 

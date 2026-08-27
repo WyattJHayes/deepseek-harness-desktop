@@ -38,13 +38,15 @@ pub mod verify;
 pub mod watch;
 
 pub use cancel::cancel;
-pub use install::{install, remove, update};
 pub(crate) use install::harness_prefer_bundled_pnpm;
-pub use installed::{list, PreinstallPlugin};
+pub use install::{install, remove, update};
 pub(crate) use installed::ensure_profile_npmrc;
+pub use installed::{list, PreinstallPlugin};
 pub(crate) use internal::ensure as ensure_internal_plugins;
 pub use preset::repo_url_of;
 pub(crate) use preset::{current_preset_hash, preinstall_pending};
-pub use recovery::{detect as detect_recovery, uninstall as uninstall_recovery, PluginRecoveryInfo};
+pub use recovery::{
+    detect as detect_recovery, uninstall as uninstall_recovery, PluginRecoveryInfo,
+};
 pub(crate) use verify::ensure_preset_plugins;
 pub use watch::DshPlugin;

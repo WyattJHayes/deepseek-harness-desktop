@@ -593,12 +593,8 @@ fn write_shim_file(target: &Path, content: &str) -> Result<(), String> {
             "Removing dangling symlink {:?} before writing shim (its target is gone)",
             target
         );
-        fs::remove_file(target).map_err(|e| {
-            format!(
-                "remove dangling symlink {} failed: {e}",
-                target.display()
-            )
-        })?;
+        fs::remove_file(target)
+            .map_err(|e| format!("remove dangling symlink {} failed: {e}", target.display()))?;
     }
     if target.exists() && is_foreign_file(target) {
         log::warn!(
@@ -703,25 +699,36 @@ mod tests {
 
     #[test]
     fn escape_path_cmd_doubles_percent() {
-        assert_eq!(escape_path_cmd(Path::new(r"C:\Users\%test%\x")), r"C:\Users\%%test%%\x");
+        assert_eq!(
+            escape_path_cmd(Path::new(r"C:\Users\%test%\x")),
+            r"C:\Users\%%test%%\x"
+        );
         assert_eq!(escape_path_cmd(Path::new("/tmp/a b")), "/tmp/a b");
     }
 
     #[test]
     fn escape_path_ps1_doubles_single_quotes() {
-        assert_eq!(escape_path_ps1(Path::new(r"C:\Users\o'brien")), r"C:\Users\o''brien");
+        assert_eq!(
+            escape_path_ps1(Path::new(r"C:\Users\o'brien")),
+            r"C:\Users\o''brien"
+        );
         assert_eq!(escape_path_ps1(Path::new("/plain/path")), "/plain/path");
     }
 
     #[test]
     fn escape_path_sh_escapes_single_quotes() {
-        assert_eq!(escape_path_sh(Path::new("/home/o'brien/.dsh")), r"/home/o'\''brien/.dsh");
+        assert_eq!(
+            escape_path_sh(Path::new("/home/o'brien/.dsh")),
+            r"/home/o'\''brien/.dsh"
+        );
         assert_eq!(escape_path_sh(Path::new("/plain/.dsh")), "/plain/.dsh");
     }
 
     fn sample_app_dir() -> PathBuf {
         if cfg!(windows) {
-            PathBuf::from(r"C:\Users\test\AppData\Roaming\io.github.hairyf.deepseek-harness-desktop")
+            PathBuf::from(
+                r"C:\Users\test\AppData\Roaming\io.github.hairyf.deepseek-harness-desktop",
+            )
         } else {
             PathBuf::from("/home/test/.local/share/io.github.hairyf.deepseek-harness-desktop")
         }
@@ -750,7 +757,9 @@ mod tests {
 
     #[test]
     fn cmd_shim_escapes_percent() {
-        let dir = PathBuf::from(r"C:\Users\100%test\AppData\Roaming\io.github.hairyf.deepseek-harness-desktop");
+        let dir = PathBuf::from(
+            r"C:\Users\100%test\AppData\Roaming\io.github.hairyf.deepseek-harness-desktop",
+        );
         let content = build_cmd_shim(&dir, &sample_dsh_home());
         assert!(content.contains("100%%test"));
         assert!(!content.contains(r#"set "APP_DIR=C:\Users\100%test""#));
@@ -770,7 +779,9 @@ mod tests {
             assert!(content.contains(r"dependencies\git\cmd\git.exe"));
             assert!(content.contains(r"dependencies\git\cmd;%PATH%"));
             let system_probe = content.find("git --exec-path").expect("system Git probe");
-            let bundled_git = content.find(r"dependencies\git\cmd").expect("bundled Git path");
+            let bundled_git = content
+                .find(r"dependencies\git\cmd")
+                .expect("bundled Git path");
             assert!(system_probe < bundled_git);
         }
         for content in [&dsh_ps1, &pnpm_ps1] {
@@ -810,13 +821,22 @@ mod tests {
         std::fs::create_dir_all(&user_dir).unwrap();
         let shim = shim_dir.join("pnpm.cmd");
         std::fs::write(&shim, build_pnpm_cmd_shim(&dir.join("app"))).unwrap();
-        std::fs::write(user_dir.join("pnpm.cmd"), "@echo off\r\necho REAL_USER_PNPM\r\nexit /b 37\r\n").unwrap();
+        std::fs::write(
+            user_dir.join("pnpm.cmd"),
+            "@echo off\r\necho REAL_USER_PNPM\r\nexit /b 37\r\n",
+        )
+        .unwrap();
         let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
         let system32 = PathBuf::from(&system_root).join("System32");
         let path = std::env::join_paths([&shim_dir, &user_dir, &system32]).unwrap();
         let output = std::process::Command::new(system32.join("cmd.exe"))
-            .args(["/d", "/c"]).arg(&shim).arg("--version")
-            .env("PATH", path).env("SystemRoot", system_root).output().unwrap();
+            .args(["/d", "/c"])
+            .arg(&shim)
+            .arg("--version")
+            .env("PATH", path)
+            .env("SystemRoot", system_root)
+            .output()
+            .unwrap();
         assert_eq!(output.status.code(), Some(37));
         assert!(String::from_utf8_lossy(&output.stdout).contains("REAL_USER_PNPM"));
         let _ = std::fs::remove_dir_all(dir);
@@ -828,7 +848,11 @@ mod tests {
     fn pnpm_cmd_shim_uses_selected_pnpm_with_restricted_path() {
         let dir = temp_dir("pnpm-selected");
         let selected = dir.join("selected-pnpm.cmd");
-        std::fs::write(&selected, "@echo off\r\necho SELECTED_PNPM %*\r\nexit /b 0\r\n").unwrap();
+        std::fs::write(
+            &selected,
+            "@echo off\r\necho SELECTED_PNPM %*\r\nexit /b 0\r\n",
+        )
+        .unwrap();
         let selected = dunce::canonicalize(&selected).unwrap();
         assert!(!selected.to_string_lossy().starts_with(r"\\?\"));
         let shim = dir.join("pnpm.cmd");
@@ -836,9 +860,14 @@ mod tests {
         let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
         let system32 = PathBuf::from(&system_root).join("System32");
         let output = std::process::Command::new(system32.join("cmd.exe"))
-            .args(["/d", "/c"]).arg(&shim).arg("probe-121")
-            .env("PATH", &system32).env("SystemRoot", system_root)
-            .env("DSH_PNPM", &selected).output().unwrap();
+            .args(["/d", "/c"])
+            .arg(&shim)
+            .arg("probe-121")
+            .env("PATH", &system32)
+            .env("SystemRoot", system_root)
+            .env("DSH_PNPM", &selected)
+            .output()
+            .unwrap();
         assert!(output.status.success());
         assert!(String::from_utf8_lossy(&output.stdout).contains("SELECTED_PNPM probe-121"));
         let _ = std::fs::remove_dir_all(dir);
@@ -917,7 +946,9 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn ps1_shim_escapes_quotes() {
-        let dir = PathBuf::from(r"C:\Users\o'brien\AppData\Roaming\io.github.hairyf.deepseek-harness-desktop");
+        let dir = PathBuf::from(
+            r"C:\Users\o'brien\AppData\Roaming\io.github.hairyf.deepseek-harness-desktop",
+        );
         let content = build_ps1_shim(&dir, &sample_dsh_home());
         assert!(content.contains(r"o''brien"));
         // dsh_home 同样走 ps1 转义
@@ -964,17 +995,17 @@ mod tests {
 
     #[test]
     fn foreign_file_detection() {
-        let dir = std::env::temp_dir().join(format!(
-            "dsh-shim-test-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("dsh-shim-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
         // 用户手动放置的 dsh 脚本 -> 视为 foreign，不应被覆盖
         let user_dsh = dir.join(if cfg!(windows) { "dsh.cmd" } else { "dsh" });
         std::fs::write(&user_dsh, "#!/bin/sh\necho my real dsh\n").unwrap();
-        assert!(is_foreign_file(&user_dsh), "user file must be treated as foreign");
+        assert!(
+            is_foreign_file(&user_dsh),
+            "user file must be treated as foreign"
+        );
 
         // 本应用生成的 shim -> 不是 foreign，可覆盖
         #[cfg(not(windows))]
@@ -982,7 +1013,10 @@ mod tests {
         #[cfg(windows)]
         let generated = build_cmd_shim(&sample_app_dir(), &sample_dsh_home());
         std::fs::write(&user_dsh, generated).unwrap();
-        assert!(!is_foreign_file(&user_dsh), "generated shim must not be foreign");
+        assert!(
+            !is_foreign_file(&user_dsh),
+            "generated shim must not be foreign"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1075,7 +1109,11 @@ mod tests {
         )
         .unwrap();
 
-        write_shim_file(&target, "#!/bin/sh\n# DeepSeek Harness Desktop - new shim\n").unwrap();
+        write_shim_file(
+            &target,
+            "#!/bin/sh\n# DeepSeek Harness Desktop - new shim\n",
+        )
+        .unwrap();
 
         assert_eq!(
             std::fs::read_to_string(&target).unwrap(),

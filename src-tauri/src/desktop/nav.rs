@@ -11,8 +11,8 @@
 //! 协议（与 dsh-tauri 插件完全一致）：
 //! - 接收 `dsh://sidebar:toggle` / `dsh://page:prev` / `dsh://page:next` 命令；
 //! - 回报 `dsh://sidebar:collapsed` / `dsh://page:firsted` / `dsh://page:lasted` 事件。
-//! 插件加载后设置 `window.__dsh_tauri_bridge__`，本脚本检测到即让位
-//! （命令与事件都停发，避免双重执行）；插件卸载后自动恢复接管。
+//!   插件加载后设置 `window.__dsh_tauri_bridge__`，本脚本检测到即让位
+//!   （命令与事件都停发，避免双重执行）；插件卸载后自动恢复接管。
 //!
 //! 页面模型：dsh 应用不产生浏览器历史，「页面」= 侧边栏当前选中的会话
 //! （`[role="treeitem"][aria-selected="true"]`）。观察选中会话变化维护会话

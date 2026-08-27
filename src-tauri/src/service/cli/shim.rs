@@ -267,7 +267,7 @@ exit /b 1
 "#,
         app_dir = escape_path_cmd(app_dir),
         dsh_bin = escape_path_cmd(&dsh_bin),
-        dsh_home = escape_path_cmd(&dsh_home),
+        dsh_home = escape_path_cmd(dsh_home),
         user_dsh = CMD_USER_DSH_PRECEDENCE,
         node_resolve = CMD_NODE_RESOLVE,
     )
@@ -312,7 +312,7 @@ exit $LASTEXITCODE
         dsh_bin = escape_path_ps1(&dsh_bin),
         user_dsh = PS1_USER_DSH_PRECEDENCE,
         node_resolve = PS1_NODE_RESOLVE,
-        dsh_home = escape_path_ps1(&dsh_home),
+        dsh_home = escape_path_ps1(dsh_home),
     )
 }
 
@@ -341,7 +341,7 @@ exec "$NODE" "$DSH_BIN" "$@"
         app_dir = escape_path_sh(app_dir),
         dsh_bin = escape_path_sh(&dsh_bin),
         user_dsh = SH_USER_DSH_PRECEDENCE,
-        dsh_home = escape_path_sh(&dsh_home),
+        dsh_home = escape_path_sh(dsh_home),
         node_resolve = SH_NODE_RESOLVE,
     )
 }

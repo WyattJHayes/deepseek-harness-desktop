@@ -6,14 +6,14 @@
 //! 1. git 托管插件的 `prepare` 构建（`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`）——
 //!    其允许键随 pnpm 的克隆方式变化（git+ssh#sha / codeload tar.gz），无法预先确定；
 //! 2. 传递依赖的原生构建（如 `node-pty`，`ERR_PNPM_IGNORED_BUILDS`）。
-//! 因此从 pnpm 错误输出解析它建议的允许键，写入 profile 的
-//! `pnpm-workspace.yaml` 后重试，直至成功或无可解析项。
+//!    因此从 pnpm 错误输出解析它建议的允许键，写入 profile 的
+//!    `pnpm-workspace.yaml` 后重试，直至成功或无可解析项。
 //!
 //! pnpm 10 与 11 对放行项的配置键与输出形式不同（均由各自报错提示决定，只能运行期
 //! 读取，见 [`parse_allowlist_keys`] 与 [`apply_allow_build_keys`]）：
 //! - pnpm 10（旧 store 复用用户版）只认 `onlyBuiltDependencies`（list 形式）；
 //! - pnpm 11（捆绑版）认 `allowBuilds`（map 形式）。
-//! 应用会把同一批包名同时写入这两个键，保证任一版本 pnpm 都能读到放行项。
+//!   应用会把同一批包名同时写入这两个键，保证任一版本 pnpm 都能读到放行项。
 //!
 //! 关键陷阱：pnpm v11 在 `allowBuilds` 阻断时可能仍以 **exit 0** 退出（假成功），
 //! 所以重试逻辑不能只看退出码（见 [`run_plugin_with_allow_build_retry`]），安装成功
@@ -1108,7 +1108,7 @@ fn apply_allow_build_keys(content: &str, keys: &[String]) -> Result<String, Stri
         keys.iter()
             .map(|k| dep_path_to_name(k))
             .filter(|name| {
-                existing_only.map_or(true, |seq| !seq.contains(&Value::String(name.clone())))
+                existing_only.is_none_or(|seq| !seq.contains(&Value::String(name.clone())))
             })
             .map(Value::String)
             .collect()
@@ -1327,10 +1327,7 @@ pub(crate) fn harness_prefer_bundled_pnpm(app_handle: &AppHandle) -> bool {
     }
     match store_major {
         Some(store) => bundled_major == Some(store) && user_major != Some(store),
-        None => match user_major {
-            Some(major) if major >= MIN_TRUSTED_PNPM_MAJOR => false,
-            _ => true,
-        },
+        None => !matches!(user_major, Some(major) if major >= MIN_TRUSTED_PNPM_MAJOR),
     }
 }
 
@@ -1720,7 +1717,7 @@ onlyBuiltDependencies:
         let dep =
             "dsh-better-sidebar@git+ssh://git@github.com/omdsh-dev/DSH-better-sidebar.git#6c89"
                 .to_string();
-        let out = apply_allow_build_keys(base, &[dep.clone()]).unwrap();
+        let out = apply_allow_build_keys(base, std::slice::from_ref(&dep)).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&out).unwrap();
         // pnpm 11：allowBuilds 保留完整 depPath
         assert_eq!(
@@ -1758,10 +1755,10 @@ onlyBuiltDependencies:
             "dsh-better-sidebar@git+ssh://git@github.com/omdsh-dev/DSH-better-sidebar.git#6c89"
                 .to_string();
         // 空内容也能生成合法配置
-        let out = apply_allow_build_keys("", &[dep.clone()]).unwrap();
+        let out = apply_allow_build_keys("", std::slice::from_ref(&dep)).unwrap();
         let map = allow_builds_map(&out);
         assert_eq!(
-            map.get(&serde_yaml::Value::String(dep)),
+            map.get(serde_yaml::Value::String(dep)),
             Some(&serde_yaml::Value::Bool(true))
         );
         // 库负责正确加引号，键原样（含 @ / : / #）可回读

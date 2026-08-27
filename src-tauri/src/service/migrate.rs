@@ -245,7 +245,7 @@ fn purge_if_stale_modules_metadata(node_modules: &Path, dsh_home: &Path) {
     let stale = doc.as_mapping().is_some_and(|mapping| {
         ["virtualStoreDir", "storeDir"].iter().any(|key| {
             mapping
-                .get(&serde_yaml::Value::String((*key).into()))
+                .get(serde_yaml::Value::String((*key).into()))
                 .and_then(serde_yaml::Value::as_str)
                 .is_some_and(|value| {
                     let p = Path::new(value);

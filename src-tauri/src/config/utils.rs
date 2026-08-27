@@ -97,11 +97,9 @@ mod tests {
     #[test]
     fn inotify_watch_limit_is_below_recommended_minimum() {
         // 推荐最小值本身应远高于常见默认（如 65536/8192），否则提示会过早触发
-        assert!(
-            MIN_INOTIFY_MAX_USER_WATCHES > 65_536,
-            "recommended minimum {} should exceed common defaults",
-            MIN_INOTIFY_MAX_USER_WATCHES
-        );
+        const {
+            assert!(MIN_INOTIFY_MAX_USER_WATCHES > 65_536);
+        }
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //! - `link:` / `file:` 本地依赖 → 永不视为有更新；
 //! - git 类型（`github:` / `git+https://github.com/…` / `https://codeload.github.com/…`）
 //!   → 用 pnpm-lock.yaml 里记录的 codeload 提交 SHA 对比 GitHub 仓库 HEAD SHA，
-//!     不相同即视为有更新（与 market 的「按提交比较」一致）；
+//!   不相同即视为有更新（与 market 的「按提交比较」一致）；
 //! - 其余（registry）→ 用 npm registry 的 `latest` dist-tag 与已装版本做语义化比较，
 //!   `latest > installed` 才视为有更新（避免把 `latest` 指向更旧版本误判为可升级）。
 //!

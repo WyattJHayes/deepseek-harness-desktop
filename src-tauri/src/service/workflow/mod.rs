@@ -306,12 +306,12 @@ fn command_line_has_argument(cmdline: &str, argument: &str) -> bool {
         let before_is_boundary = cmdline[..start]
             .chars()
             .next_back()
-            .map_or(true, char::is_whitespace);
+            .is_none_or(char::is_whitespace);
         let end = start + matched.len();
         let after_is_boundary = cmdline[end..]
             .chars()
             .next()
-            .map_or(true, char::is_whitespace);
+            .is_none_or(char::is_whitespace);
         before_is_boundary && after_is_boundary
     })
 }
@@ -539,7 +539,7 @@ pub fn sweep_orphan_harness(app_handle: &tauri::AppHandle) {
 /// 占用指定端口的进程 PID（LISTENING 状态）。
 /// - Windows：`netstat -ano` 解析；
 /// - Unix：`lsof -ti tcp:<port>`，不可用时返回 None。
-/// 返回 None 视为"无法确认"，调用方不会因此杀任何进程。
+///   返回 None 视为"无法确认"，调用方不会因此杀任何进程。
 fn port_owner_pid(port: u16) -> Option<u32> {
     #[cfg(windows)]
     {
@@ -987,7 +987,7 @@ pub async fn launch(app_handle: tauri::AppHandle) -> Result<(), String> {
                 .arg("--host")
                 .arg("127.0.0.1")
                 .arg("--port")
-                .arg(&setting.port.to_string());
+                .arg(setting.port.to_string());
             if no_open {
                 cmd.arg("--no-open");
             }

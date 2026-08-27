@@ -1,6 +1,6 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -173,9 +173,9 @@ fn append_log(log_path: &PathBuf, line: &str) {
 }
 
 /// 轮转日志文件名：`dsh-web.log`（index 0）、`dsh-web.log.1`、`dsh-web.log.2`……
-fn indexed_log_path(log_path: &PathBuf, index: usize) -> PathBuf {
+fn indexed_log_path(log_path: &Path, index: usize) -> PathBuf {
     if index == 0 {
-        return log_path.clone();
+        return log_path.to_path_buf();
     }
     let mut name = log_path.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".{}", index));
@@ -193,7 +193,7 @@ pub fn rotate_service_log(log_path: &PathBuf, keep: usize) {
         return;
     }
     // 1) 删除超过保留上限的最老文件（它会被顶上来的文件覆盖且无处安放）
-    let _ = std::fs::remove_file(&indexed_log_path(log_path, keep - 1));
+    let _ = std::fs::remove_file(indexed_log_path(log_path, keep - 1));
     // 2) 从次老到次新依次后移，为本次启动腾出位置
     for i in (1..keep).rev() {
         let from = indexed_log_path(log_path, i);
@@ -242,10 +242,10 @@ mod tests {
 
         // 最后一次循环后：当前为空、.1 = start 4、.2 = start 3
         assert_eq!(fs::read_to_string(&log).unwrap_or_default(), "");
-        assert!(fs::read_to_string(&dir.join("dsh-web.log.1"))
+        assert!(fs::read_to_string(dir.join("dsh-web.log.1"))
             .unwrap()
             .contains("start 4"));
-        assert!(fs::read_to_string(&dir.join("dsh-web.log.2"))
+        assert!(fs::read_to_string(dir.join("dsh-web.log.2"))
             .unwrap()
             .contains("start 3"));
         assert!(!dir.join("dsh-web.log.3").exists());

@@ -3,9 +3,9 @@ import { useOverlay } from '@overlastic/react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'valtio-define'
-import { DesktopUpdateDialog } from '@/components/desktop-update-dialog'
 import { store } from '@/store'
 import { toast } from '@/utils/toast'
+import { DesktopUpdateDialogOverlay } from './lazy-overlays'
 
 /** 桌面端自更新轮询间隔：Rust 侧不再缓存，改为低频轮询以免触发 GitHub 未认证限流（60 次/小时/IP） */
 const POLL_INTERVAL = 10 * 60_000
@@ -18,7 +18,7 @@ const POLL_INTERVAL = 10 * 60_000
 export function DesktopUpdater() {
   const { t } = useTranslation()
   const { updateInfo, dismissedTag, downloading } = useStore(store.desktopUpdater)
-  const openUpdateDialog = useOverlay(DesktopUpdateDialog)
+  const openUpdateDialog = useOverlay(DesktopUpdateDialogOverlay)
 
   // 低频静默检查新版本（实时查询，无本地缓存）；后台失败静默，不打扰用户
   useEffect(() => {

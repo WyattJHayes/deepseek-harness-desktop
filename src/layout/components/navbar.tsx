@@ -17,13 +17,15 @@ import { useTranslation } from 'react-i18next'
 import { If } from 'react-if-lite'
 import { cn } from 'tailwind-variants'
 import { useStore } from 'valtio-define'
-import { ConfigDialog } from '@/components/config-dialog'
-import { DesktopAboutDialog } from '@/components/desktop-about-dialog'
-import { DesktopUpdateDialog } from '@/components/desktop-update-dialog'
 import { useDshPlugins } from '@/hooks/use-dsh-plugins'
 import { useIframeTauri } from '@/hooks/use-iframe-tauri'
 import { store } from '@/store'
 import { toast } from '@/utils/toast'
+import {
+  ConfigDialogOverlay,
+  DesktopAboutDialogOverlay,
+  DesktopUpdateDialogOverlay,
+} from './lazy-overlays'
 import { useMacOSAppMenu } from './use-macos-app-menu'
 
 /**
@@ -123,9 +125,9 @@ export function Navbar({ iframeRef }: NavbarProps) {
   const { sidebarCollapsed, canGoBack, canGoForward, sendNav } = useIframeTauri(iframeRef)
   const { updateInfo } = useStore(store.desktopUpdater)
 
-  const openConfigDialog = useOverlay(ConfigDialog)
-  const openAboutDialog = useOverlay(DesktopAboutDialog)
-  const openUpdateDialog = useOverlay(DesktopUpdateDialog)
+  const openConfigDialog = useOverlay(ConfigDialogOverlay)
+  const openAboutDialog = useOverlay(DesktopAboutDialogOverlay)
+  const openUpdateDialog = useOverlay(DesktopUpdateDialogOverlay)
   // 仅当 dsh-tauri 插件启用（已安装）时显示左侧导航控件
   const tauriEnabled = plugins.some(plugin => plugin.id === TAURI_PLUGIN_ID)
   function handleWindowAction(action: 'minimize' | 'maximize' | 'background') {

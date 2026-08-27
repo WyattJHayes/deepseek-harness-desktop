@@ -52,6 +52,38 @@ jobs:
       - name: Unit test
         run: pnpm run test -- --run
 
+  # Windows 前端检查：与 Rust Windows 矩阵互补，覆盖 pnpm/Node/TypeScript/Vitest
+  # 在 Windows shell 与路径环境下的执行情况。
+  windows-frontend:
+    name: Windows frontend checks
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Unit test
+        run: pnpm run test -- --run
+
   # Rust 单元测试（应用主体逻辑）：
   # 这是 CI 此前完全缺失的部分。仓库里存在大量 #[cfg(windows)] 的 Windows 专属
   # 代码（win_spawn / win_inspector / cli shim / path / MSI 版本处理），只能在

@@ -8,5 +8,6 @@ export default antfu({
   ignores: [
     'AGENTS.md',
     'docs',
+    '.superpowers/**',
   ],
 })

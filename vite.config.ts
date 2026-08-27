@@ -22,6 +22,51 @@ export default defineConfig(async () => ({
     },
   },
 
+  build: {
+    rollupOptions: {
+      output: {
+        // 将稳定的第三方运行时拆开，避免入口 chunk 同时承载应用代码和所有依赖。
+        manualChunks(id) {
+          if (!id.includes('/node_modules/'))
+            return undefined
+          if (id.includes('/node_modules/react-dom/'))
+            return 'vendor-react-dom'
+          if (id.includes('/node_modules/react/'))
+            return 'vendor-react'
+          if (
+            id.includes('/node_modules/react-aria/')
+            || id.includes('/node_modules/react-aria-components/')
+            || id.includes('/node_modules/react-stately/')
+          ) {
+            return 'vendor-react-aria'
+          }
+          if (id.includes('/node_modules/@heroui/'))
+            return 'vendor-heroui'
+          if (id.includes('/node_modules/@gravity-ui/'))
+            return 'vendor-icons'
+          if (id.includes('/node_modules/@tanstack/'))
+            return 'vendor-query'
+          if (id.includes('/node_modules/@tauri-apps/'))
+            return 'vendor-tauri'
+          if (id.includes('/node_modules/@overlastic/'))
+            return 'vendor-overlays'
+          if (
+            id.includes('/node_modules/@hairy/')
+            || id.includes('/node_modules/bignumber.js/')
+            || id.includes('/node_modules/valtio')
+          ) {
+            return 'vendor-hairy'
+          }
+          if (id.includes('/node_modules/i18next/'))
+            return 'vendor-i18n'
+          if (id.includes('/node_modules/tailwind-variants/'))
+            return 'vendor-styling'
+          return undefined
+        },
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development.
   // 1. prevent vite from obscuring rust errors
   clearScreen: false,

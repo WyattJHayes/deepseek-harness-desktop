@@ -420,7 +420,7 @@ mod tests {
         let file = dir.join("installer.part");
         let content = b"deepseek-harness-desktop installer payload";
         std::fs::write(&file, content).unwrap();
-        let real = format!("sha256:{}", format!("{:x}", sha2::Sha256::digest(content)));
+        let real = format!("sha256:{:x}", sha2::Sha256::digest(content));
         // 正确摘要通过
         assert!(verify_installer_sha256(&file, &real).is_ok());
         // 裸 64hex（无 sha256: 前缀）也接受

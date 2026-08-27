@@ -1,5 +1,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+#[cfg(not(target_os = "macos"))]
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
@@ -79,11 +81,42 @@ pub async fn is_dsh_running(port: u16) -> bool {
     check_status.await.unwrap_or(false)
 }
 
-/// 检查指定端口是否被占用（通过尝试连接来判断）
+/// 检查指定端口是否被占用（通过尝试绑定来判断）
 pub fn is_port_in_use(port: u16) -> bool {
     // 以实际绑定结果判断，能够识别“已绑定但尚未 listen”的占用状态。
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    TcpListener::bind(addr).is_err()
+    bind_probe(addr).is_err()
+}
+
+/// 端口占用探测：能成功绑定即视为空闲。平台差异见下方 macOS 分支注释。
+#[cfg(not(target_os = "macos"))]
+fn bind_probe(addr: SocketAddr) -> std::io::Result<()> {
+    TcpListener::bind(addr).map(|_| ())
+}
+
+/// macOS/BSD 上刚 close 的监听 socket 会留下一个极短的“端口暂不可复用”窗口：
+/// 不带 SO_REUSEADDR 时紧随其后的 bind 会误报 EADDRINUSE（典型表现为服务重启
+/// 偶发 “address already in use”）。本函数每次探测都是 bind→drop，探测自身也会
+/// 制造这个窗口——`wait_for_port_release` 轮询到“空闲”返回后立刻再探测就可能
+/// 踩中，导致占用的误判（CI 偶发的端口拉高/测试失败）。
+///
+/// 因此探测前先设 SO_REUSEADDR：
+///   - 真实占用（残留 dsh 等仍 listen 在同一端口）依然 bind 失败 → 判为占用；
+///   - 上一次探测留下的 linger 不再误判为占用。
+/// SO_REUSEADDR 只放宽 TIME_WAIT/linger 状态的复用，并不会允许两个 socket 同时
+/// listen 同一地址（那是 SO_REUSEPORT 的语义），因此不会掩盖真实监听者。
+/// Windows 上 SO_REUSEADDR 语义不同（可强制覆盖既有监听者），会掩盖真实占用，
+/// 故只对 macOS 启用。
+#[cfg(target_os = "macos")]
+fn bind_probe(addr: SocketAddr) -> std::io::Result<()> {
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::STREAM,
+        Some(socket2::Protocol::TCP),
+    )?;
+    socket.set_reuse_address(true)?;
+    socket.bind(&socket2::SockAddr::from(addr))?;
+    Ok(())
 }
 
 /// 在独立线程中读取子进程的输出，同时写入日志文件

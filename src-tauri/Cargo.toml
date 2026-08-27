@@ -62,6 +62,11 @@ tokio = { version = "1", features = [ "full" ] }
 semver = "1"
 dunce = "1.0.5"
 
+# macOS/BSD 的 TCP 端口释放存在短暂滞后（close 后立即重绑会误报 EADDRINUSE），
+# 端口探测需要 SO_REUSEADDR；Windows 上该选项会掩盖真实监听者，故仅 macOS 启用。
+[target.'cfg(target_os = "macos")'.dependencies]
+socket2 = "0.6"
+
 [target.'cfg(windows)'.dependencies]
 rfd = "0.16"
 webview2-com = "0.38"

@@ -1,5 +1,7 @@
 {
-  "identifier": "desktop-capability",
+  "identifier": "desktop-local",
+  "description": "Capability for the bundled desktop shell. Native APIs stay available only to this local application origin; the remote Harness iframe must use the shell's origin-checked postMessage bridges.",
+  "local": true,
   "platforms": [
     "macOS",
     "windows",
@@ -8,5 +10,28 @@
   "windows": [
     "main"
   ],
-  "permissions": []
+  "permissions": [
+    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:app:allow-version",
+    "core:app:allow-default-window-icon",
+    "core:window:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-set-decorations",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-start-dragging",
+    "opener:default",
+    "opener:allow-open-url",
+    "opener:allow-default-urls",
+    "opener:allow-reveal-item-in-dir",
+    "store:default",
+    "clipboard-manager:allow-write-text"
+  ]
 }

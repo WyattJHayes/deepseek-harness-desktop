@@ -30,14 +30,18 @@ pub const PNPM_SHA256: &str = "deafa7ec98a1218b6a047289b92fbe2395c1e22d3495bb711
 pub const PNPM_BASE_URL: &str = "https://registry.npmjs.org/pnpm/-/";
 
 /// Windows 空白环境使用的免安装 MinGit 版本。
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const MINGIT_VERSION: &str = "2.53.0.2";
 /// MinGit x64 官方发行包 SHA-256。
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const MINGIT_X64_SHA256: &str =
     "d4bf83d6a860ccae9af44e508e1e00a39f09db6fa78a9ba5543b94d87ca22a29";
 /// MinGit ARM64 官方发行包 SHA-256。
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const MINGIT_ARM64_SHA256: &str =
     "842d50edc6bbcf39693e60a8ebb9dabb89b96b932b63aae12d218522b3e497f3";
 /// Git for Windows 官方发行资产地址前缀。
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const MINGIT_BASE_URL: &str =
     "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.2/";
 
@@ -71,7 +75,9 @@ pub const PNPM_CORE_DIR: &str = "pnpm";
 pub const PNPM_ENTRY_RELATIVE: &str = "bin/pnpm.cjs";
 
 /// Windows 免安装 Git 的安装目录与 CLI 入口（相对安装目录）。
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const MINGIT_CORE_DIR: &str = "git";
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const MINGIT_ENTRY_RELATIVE: &str = "cmd/git.exe";
 
 /// 旧版数据目录名：迁移前 $DSH_HOME 位于 `{app_data}/data/dsh`，

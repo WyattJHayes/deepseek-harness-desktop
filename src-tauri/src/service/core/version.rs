@@ -237,6 +237,7 @@ pub async fn list(app_handle: &AppHandle) -> Vec<HarnessCore> {
 ///
 /// `id` 取值：`local` | `app`（无 tag 记录的旧激活行）| `app-<tag>`。
 pub async fn set_active(app_handle: &AppHandle, id: &str) -> Result<HarnessCore, String> {
+    validate_app_core_id(id)?;
     if id == "local" {
         if local_core(app_handle).is_none() {
             return Err("CORE_LOCAL_NOT_FOUND: no local core detected".to_string());
@@ -264,6 +265,17 @@ pub async fn set_active(app_handle: &AppHandle, id: &str) -> Result<HarnessCore,
         .ok_or_else(|| "CORE_NOT_FOUND: active core disappeared after switch".to_string())?)
 }
 
+/// 校验核心面板传入的 ID，避免 `app-<tag>` 把路径分隔符带入版本槽位。
+fn validate_app_core_id(id: &str) -> Result<(), String> {
+    if id == "local" || id == "app" {
+        return Ok(());
+    }
+    let tag = id
+        .strip_prefix("app-")
+        .ok_or_else(|| format!("CORE_INVALID_ID: {id}"))?;
+    fs_guard::validate_id(tag).map_err(|e| format!("CORE_INVALID_ID: {e}"))
+}
+
 /// 切换到指定 tag 的预打包版本（已下载的历史槽位）。
 ///
 /// 磁盘布局：激活版本固定为 `dependencies/dsh`（既有代码全部依赖该路径），
@@ -271,10 +283,12 @@ pub async fn set_active(app_handle: &AppHandle, id: &str) -> Result<HarnessCore,
 /// 互换：先把当前激活目录改名为自己的 tag 槽位（清理残留同名槽位），再把目标槽位
 /// 改名为激活目录；任一步失败回滚。切换前先停服务，避免目录被进程句柄锁定（Windows DLL 锁）。
 async fn switch_app_version(app_handle: &AppHandle, tag: &str) -> Result<(), String> {
+    fs_guard::validate_id(tag).map_err(|e| format!("CORE_INVALID_ID: {e}"))?;
     let deps = dependencies_dir(app_handle);
-    let active_dir = config::get_dsh_install_path(app_handle);
+    let active_dir = fs_guard::join_safe(&deps, "dsh")?;
     let target_dir = existing_slot_dir(app_handle, tag)
         .ok_or_else(|| format!("CORE_VERSION_NOT_DOWNLOADED: {tag}"))?;
+    let target_dir = fs_guard::ensure_within(&target_dir, &deps)?;
     let cur_tag = config::get_dsh_pkg_tag(app_handle);
 
     // 激活目录已是目标版本（tag 相同）→ 仅切来源标记（如 local → app 同版本）
@@ -293,16 +307,25 @@ async fn switch_app_version(app_handle: &AppHandle, tag: &str) -> Result<(), Str
     }
 
     // 1. 当前激活目录让出激活位：改名为自己的 tag 槽位（残留槽位先清理）
-    let backup_dir = match &cur_tag {
-        Some(cur) => deps.join(cur),
+    let backup_name = match &cur_tag {
+        Some(cur) => {
+            fs_guard::validate_id(cur).map_err(|e| format!("CORE_SWITCH_FAILED: {e}"))?;
+            cur.clone()
+        }
         // 无 tag 记录（旧版安装）：用版本号兜底命名槽位
-        None => deps.join(format!(
+        None => format!(
             "dsh-{}",
             config::get_dsh_version(app_handle).unwrap_or_else(|| "unknown".to_string())
-        )),
+        ),
     };
+    fs_guard::validate_id(&backup_name).map_err(|e| format!("CORE_SWITCH_FAILED: {e}"))?;
+    let backup_dir = fs_guard::join_safe(&deps, &backup_name)?;
     if active_dir.exists() {
-        if backup_dir.exists() && !download::remove_dir_with_retry(&backup_dir).await {
+        let active_dir = fs_guard::ensure_within(&active_dir, &deps)?;
+        if backup_dir.exists()
+            && !download::remove_dir_with_retry(&fs_guard::safe_remove_target(&deps, &backup_name)?)
+                .await
+        {
             return Err(format!(
                 "CORE_SWITCH_FAILED: cannot clean old backup {}",
                 backup_dir.display()
@@ -345,6 +368,21 @@ async fn switch_app_version(app_handle: &AppHandle, tag: &str) -> Result<(), Str
     }
     config::set_store_dat_setting(app_handle, setting);
     Ok(())
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::validate_app_core_id;
+
+    #[test]
+    fn app_core_id_rejects_path_traversal() {
+        for bad in ["app-../x", "app-/tmp/x", "app-", "app-.."] {
+            assert!(validate_app_core_id(bad).is_err(), "{bad:?}");
+        }
+        for good in ["app-dsh-0.1.0-rc.1-123", "app-v1.2.3"] {
+            assert!(validate_app_core_id(good).is_ok(), "{good:?}");
+        }
+    }
 }
 
 /// 下载指定 tag 的预打包核心到历史槽位 `dependencies/<tag>`（不激活，切换由
@@ -414,6 +452,7 @@ pub async fn remove_version(app_handle: &AppHandle, id: &str) -> Result<(), Stri
     }
     let dir = existing_slot_dir(app_handle, tag)
         .ok_or_else(|| format!("CORE_VERSION_NOT_FOUND: {tag}"))?;
+    let dir = fs_guard::ensure_within(&dir, &dependencies_dir(app_handle))?;
 
     // 停止服务避免句柄锁定（被删目录可能是上一份激活副本，句柄未释放）
     if workflow::has_owned_process() {

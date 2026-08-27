@@ -9,9 +9,13 @@ use std::path::Path;
 use tauri::AppHandle;
 
 /// Windows 下 shim 文件名（cmd 为主入口，ps1 供 PowerShell 原生体验）
+#[cfg(windows)]
 pub const SHIM_CMD_NAME: &str = "dsh.cmd";
+#[cfg(windows)]
 pub const SHIM_PS1_NAME: &str = "dsh.ps1";
+#[cfg(windows)]
 pub const PNPM_SHIM_CMD_NAME: &str = "pnpm.cmd";
+#[cfg(windows)]
 pub const PNPM_SHIM_PS1_NAME: &str = "pnpm.ps1";
 
 /// Unix 下 shim 文件名
@@ -357,6 +361,7 @@ exec "$NODE" "$DSH_BIN" "$@"
 /// 实现要点：
 /// - 不用 `findstr` 匹配路径（`\` 会被当正则转义导致过滤失效）；
 /// - 块内变量判断用 for 变量（`%%~xp`）而非 `%VAR%`（块解析时机陷阱）。
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn build_pnpm_cmd_shim(app_dir: &Path) -> String {
     let pnpm_bin = app_dir.join("dependencies/pnpm/bin/pnpm.cjs");
 
@@ -442,6 +447,7 @@ exit /b 1
 /// Windows `pnpm.ps1` 内容：优先转发用户 pnpm（`Get-Command pnpm -All`，
 /// 排除本 shim 目录），否则用 node 运行捆绑 pnpm.cjs。
 /// `DSH_PREFER_BUNDLED_PNPM=1` 时捆绑版优先（见模块头注）。
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn build_pnpm_ps1_shim(app_dir: &Path) -> String {
     let pnpm_bin = app_dir.join("dependencies/pnpm/bin/pnpm.cjs");
 

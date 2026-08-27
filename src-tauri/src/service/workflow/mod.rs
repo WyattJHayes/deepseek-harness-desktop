@@ -587,6 +587,7 @@ fn port_owner_pid(port: u16) -> Option<u32> {
 }
 
 /// Windows RedirectionGuard（错误码 448 = ERROR_UNTRUSTED_MOUNT_POINT）逃逸重拉的标记路径。
+#[cfg(windows)]
 fn relaunch_marker_path(app_handle: &tauri::AppHandle) -> std::path::PathBuf {
     config::get_base_dir(app_handle).join(".dsh-relaunch-448")
 }
@@ -595,6 +596,7 @@ fn relaunch_marker_path(app_handle: &tauri::AppHandle) -> std::path::PathBuf {
 ///
 /// 448 只在「进程继承 RedirectionGuard 强制执行」时出现；干净上下文（父进程为
 /// explorer 等普通进程）下 Level-1 符号链接可正常穿越。
+#[cfg(windows)]
 fn dsh_bin_open_error(app_handle: &tauri::AppHandle) -> Option<i32> {
     std::fs::File::open(config::get_dsh_binary_path(app_handle))
         .err()
@@ -1108,15 +1110,15 @@ pub async fn install(
         .get_webview_window("main")
         .ok_or("Failed to get main window")?;
     log::debug!("Main window obtained");
-    let mut tasks: Vec<Box<dyn download::Installable>> = vec![
+    let tasks: Vec<Box<dyn download::Installable>> = vec![
         Box::new(download::Nodejs),
         Box::new(download::Dsh),
         Box::new(download::Pnpm),
+        // Windows Sandbox 等空白环境没有 Git；仅 Windows 加入第 4 项，若系统 Git
+        // 可真实执行则 Installable 会跳过，不重复下载也不修改系统 PATH。
+        #[cfg(windows)]
+        Box::new(download::Git),
     ];
-    // Windows Sandbox 等空白环境没有 Git；仅 Windows 加入第 4 项，若系统 Git
-    // 可真实执行则 Installable 会跳过，不重复下载也不修改系统 PATH。
-    #[cfg(windows)]
-    tasks.push(Box::new(download::Git));
     // 每项均有下载/解压两个阶段，按实际平台任务数计算，避免进度提前到 100%。
     let mut tracker = download::ProgressTracker::new(&window, tasks.len() * 2);
     log::info!("Task list created, {} tasks total", tasks.len());

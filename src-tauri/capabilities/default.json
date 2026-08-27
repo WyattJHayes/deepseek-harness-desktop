@@ -1,33 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "Capability for the main window and the embedded Harness GUI; grants IPC (e.g. opener|open_url) to the remote-origin dsh page. The service port is NOT fixed: it defaults to 3080/3081 but is user-configurable and advances to the next free port when the default is occupied (service/workflow::find_available_port), so the allowlist must cover any loopback port, not a hardcoded pair.",
+  "identifier": "harness-remote",
+  "description": "The remote Harness iframe is intentionally denied direct Tauri IPC. Its native integrations are mediated by the local desktop shell through origin-checked postMessage bridges. The service port is user-configurable and may advance to the next free loopback port, so the URL pattern must cover loopback ports without granting any system permission.",
+  "local": false,
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*"]
   },
-  "permissions": [
-    "core:default",
-    "core:event:allow-listen",
-    "core:event:allow-unlisten",
-    "core:app:allow-version",
-    "core:app:allow-default-window-icon",
-    "core:window:default",
-    "core:window:allow-show",
-    "core:window:allow-hide",
-    "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-set-decorations",
-    "core:window:allow-set-focus",
-    "core:window:allow-unminimize",
-    "core:window:allow-unmaximize",
-    "core:window:allow-start-dragging",
-    "opener:default",
-    "opener:allow-open-url",
-    "opener:allow-default-urls",
-    "opener:allow-reveal-item-in-dir",
-    "store:default",
-    "clipboard-manager:allow-write-text"
-  ]
+  "permissions": []
 }

@@ -21,6 +21,8 @@ use std::fs;
 use std::path::Path;
 use tauri::AppHandle;
 
+use crate::service::fs_guard;
+
 use super::errors;
 use super::installed::profile_dir;
 
@@ -42,22 +44,7 @@ fn is_core_package(name: &str) -> bool {
 
 /// 是否为合法的 npm 包名（可带 scope）。用于过滤日志里提取到的候选引用。
 fn is_package_name(s: &str) -> bool {
-    let s = s.trim();
-    if s.is_empty() || s.contains(':') || s.chars().any(|c| c.is_whitespace()) {
-        return false;
-    }
-    // 路径穿越防护：`.` 与 `..` 虽由字符集放行（包名允许点），但单独出现
-    // 或作为路径片段时会被 `Path::join` 解析为上级目录——必须显式拒绝。
-    if s == "." || s == ".." || s.starts_with("..") || s.ends_with('/') || s.ends_with("..") {
-        return false;
-    }
-    let body = s.strip_prefix('@').unwrap_or(s);
-    // scoped 必须带 `/`（@scope/name）
-    if s.starts_with('@') && !body.contains('/') {
-        return false;
-    }
-    body.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '/')
+    fs_guard::validate_package_name(s).is_ok()
 }
 
 /// 是否是可行动的第三方插件引用（排除核心包与 @deepseek-ai 官方包）。
@@ -526,7 +513,9 @@ fn remove_plugin_from_manifest(manifest: &mut serde_json::Value, id: &str) -> bo
 /// 删除 `node_modules/<id>`；scoped 目录删除后若 scope 空则一并清理。
 fn remove_plugin_dir(profile: &Path, id: &str) {
     let node_modules = profile.join("node_modules");
-    let dir = node_modules.join(id);
+    let Ok(dir) = fs_guard::safe_remove_package_target(&node_modules, id) else {
+        return;
+    };
     if let Err(e) = fs::remove_dir_all(&dir) {
         if e.kind() != std::io::ErrorKind::NotFound {
             log::warn!("failed to remove plugin dir {}: {e}", dir.display());
@@ -544,7 +533,9 @@ fn remove_plugin_dir(profile: &Path, id: &str) {
                     .map(|mut d| d.next().is_none())
                     .unwrap_or(false)
             {
-                let _ = fs::remove_dir_all(&scope_dir);
+                if let Ok(scope_dir) = fs_guard::ensure_within(&scope_dir, &node_modules) {
+                    let _ = fs::remove_dir_all(&scope_dir);
+                }
             }
         }
     }
@@ -647,6 +638,20 @@ mod tests {
         // dshmarket 是第三方市场插件，可卸载（不应被当作核心保护包）
         assert!(is_actionable_plugin_ref("dshmarket"));
         assert!(is_actionable_plugin_ref("dsh-better-sidebar"));
+    }
+
+    #[test]
+    fn package_name_rejects_path_segments() {
+        for bad in ["foo/bar/baz", "foo/../../target", "@scope/name/extra"] {
+            assert!(!is_package_name(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn package_path_cannot_escape_node_modules() {
+        let root = std::path::Path::new("/tmp/profile/node_modules");
+        assert!(crate::service::fs_guard::join_package(root, "foo/../../target").is_err());
+        assert!(crate::service::fs_guard::join_package(root, "@scope/name").is_ok());
     }
 
     #[test]

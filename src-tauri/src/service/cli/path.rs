@@ -12,6 +12,7 @@ use super::shim::SHIM_CMD_NAME;
 use super::shim::SHIM_SH_NAME;
 
 /// Windows 下 shim 根目录名（`%LOCALAPPDATA%\<此目录>\bin`）
+#[cfg(windows)]
 const CLI_ROOT_DIR_NAME: &str = "deepseek-harness";
 
 /// Unix 下 shim 所在目录（XDG 约定）
@@ -114,10 +115,14 @@ pub fn path_registered(app_handle: &AppHandle) -> bool {
 /// "用户优先"策略：安装时（`Pnpm::check_installed`）用户已有 pnpm 则跳过
 /// 捆绑安装；`pnpm` shim 运行时也会优先转发到用户的 pnpm。
 pub fn find_user_pnpm(app_handle: &AppHandle) -> Option<PathBuf> {
-    let mut dirs: Vec<PathBuf> =
+    let dirs: Vec<PathBuf> =
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
     #[cfg(windows)]
-    append_windows_pnpm_dirs(&mut dirs);
+    let dirs = {
+        let mut dirs = dirs;
+        append_windows_pnpm_dirs(&mut dirs);
+        dirs
+    };
     find_pnpm_in_dirs(&get_bin_dir(app_handle), &dirs)
 }
 

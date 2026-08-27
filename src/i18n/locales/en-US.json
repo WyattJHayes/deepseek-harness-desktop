@@ -93,6 +93,7 @@
   "messages.copy_success": "URL copied to clipboard",
   "messages.log_copied": "Logs copied to clipboard",
   "messages.copy_failed": "Failed to copy URL",
+  "messages.logs_copy_failed": "Failed to copy logs",
   "messages.port_changed": "Port changed",
   "messages.port_restart_hint": "It takes effect after the service restarts. Restart now?",
   "messages.logs_cleared": "Logs cleared",

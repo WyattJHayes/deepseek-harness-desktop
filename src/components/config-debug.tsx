@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { If } from 'react-if-lite'
 import { useStore } from 'valtio-define'
 import { store } from '@/store'
+import { writeClipboardText } from '@/utils/clipboard'
 import { toast } from '@/utils/toast'
 import { Info } from './info'
 
@@ -66,6 +67,17 @@ export function ConfigDebug() {
     queryFn: () => invoke<string>('read_service_logs'),
     refetchInterval: 2000,
   })
+
+  async function copyLogs() {
+    try {
+      await writeClipboardText(logs || '')
+      toast(t('messages.logs_copied'))
+    }
+    catch (err) {
+      console.error('[ConfigDebug] copy logs failed:', err)
+      toast(t('messages.logs_copy_failed'), { variant: 'danger' })
+    }
+  }
 
   const { mutate: onClearLogs } = useMutation({
     mutationFn: async () => {
@@ -344,10 +356,7 @@ export function ConfigDebug() {
               size="sm"
               className="rounded-md size-6"
               variant="ghost"
-              onPress={async () => {
-                await navigator.clipboard.writeText(logs || '')
-                toast(t('messages.logs_copied'))
-              }}
+              onPress={() => { void copyLogs() }}
             >
               <Copy className="scale-80" />
             </Button>

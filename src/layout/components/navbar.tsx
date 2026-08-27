@@ -20,6 +20,7 @@ import { useStore } from 'valtio-define'
 import { useDshPlugins } from '@/hooks/use-dsh-plugins'
 import { useIframeTauri } from '@/hooks/use-iframe-tauri'
 import { store } from '@/store'
+import { writeClipboardText } from '@/utils/clipboard'
 import { toast } from '@/utils/toast'
 import {
   ConfigDialogOverlay,
@@ -198,12 +199,12 @@ export function Navbar({ iframeRef }: NavbarProps) {
   async function copyRunLogs() {
     try {
       const logs = await invoke<string>('read_run_logs')
-      await navigator.clipboard.writeText(logs)
+      await writeClipboardText(logs)
       toast(t('messages.logs_copied'), {})
     }
     catch (err) {
       console.error('[Navbar] failed to copy run logs:', err)
-      toast(t('messages.copy_failed'), {})
+      toast(t('messages.logs_copy_failed'), { variant: 'danger' })
     }
   }
 

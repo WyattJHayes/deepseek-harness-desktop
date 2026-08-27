@@ -19,7 +19,9 @@ use std::path::{Path, PathBuf};
 /// 允许。检查顺序：先整体字符集（排除 `/`、`\`、空白），再排除 `.` `..` 与
 /// 以 `..` 开头/结尾的组件形态。
 pub fn validate_id(id: &str) -> Result<(), String> {
-    let id = id.trim();
+    if id != id.trim() {
+        return Err("INVALID_ID: leading or trailing whitespace".to_string());
+    }
     if id.is_empty() {
         return Err("INVALID_ID: id is empty".to_string());
     }
@@ -48,10 +50,8 @@ pub fn validate_id(id: &str) -> Result<(), String> {
 /// （`/data/foobar` 不作为 `/data/foo` 的子路径）以及 `..`、符号链接改写。
 /// `root` 不存在时（尚未初始化）直接拒绝——删除操作的前提是父目录存在。
 pub fn ensure_within(child: &Path, root: &Path) -> Result<PathBuf, String> {
-    let root_real = dunce::canonicalize(root)
-        .map_err(|e| format!("ROOT_RESOLVE_FAILED: {e}"))?;
-    let child_real = dunce::canonicalize(child)
-        .map_err(|e| format!("PATH_RESOLVE_FAILED: {e}"))?;
+    let root_real = dunce::canonicalize(root).map_err(|e| format!("ROOT_RESOLVE_FAILED: {e}"))?;
+    let child_real = dunce::canonicalize(child).map_err(|e| format!("PATH_RESOLVE_FAILED: {e}"))?;
     if !child_real.starts_with(&root_real) {
         return Err(format!(
             "PATH_ESCAPE_REJECTED: {} is outside {}",
@@ -90,6 +90,101 @@ pub fn join_safe(root: &Path, id: &str) -> Result<PathBuf, String> {
     Ok(root.join(id))
 }
 
+/// 校验 npm 包名：普通包仅一段；带 scope 时只能是严格的 `@scope/name`。
+///
+/// 包名最终会映射到 `node_modules/<name>` 或 `node_modules/@scope/<name>`。
+/// 不能复用 [`validate_id`]，因为 scoped 包合法地包含一个 `/`；但也绝不能接受
+/// 多段路径、空段、`.` 或 `..`，否则恢复卸载可能沿 `node_modules` 根目录外删除。
+pub fn validate_package_name(id: &str) -> Result<(), String> {
+    if id != id.trim() {
+        return Err("INVALID_PACKAGE_NAME: leading or trailing whitespace".to_string());
+    }
+    if id.is_empty() {
+        return Err("INVALID_PACKAGE_NAME: package name is empty".to_string());
+    }
+    if id.len() > 214 {
+        return Err("INVALID_PACKAGE_NAME: package name too long".to_string());
+    }
+
+    let valid_segment = |segment: &str| {
+        !segment.is_empty()
+            && segment != "."
+            && segment != ".."
+            && segment
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+    };
+
+    let mut parts = id.split('/');
+    let first = parts.next().unwrap_or_default();
+    let valid = if let Some(scope) = first.strip_prefix('@') {
+        matches!(
+            (valid_segment(scope), parts.next(), parts.next()),
+            (true, Some(name), None) if valid_segment(name)
+        )
+    } else {
+        valid_segment(first) && parts.next().is_none()
+    };
+
+    valid
+        .then_some(())
+        .ok_or_else(|| format!("INVALID_PACKAGE_NAME: invalid npm package name: {id}"))
+}
+
+/// 在 `node_modules` 根目录下拼接经过校验的 npm 包路径。
+///
+/// 返回路径可能尚不存在；执行删除前调用方必须再通过
+/// [`safe_remove_package_target`] 确认真实路径没有经由符号链接越界。
+pub fn join_package(root: &Path, id: &str) -> Result<PathBuf, String> {
+    validate_package_name(id)?;
+    Ok(id
+        .split('/')
+        .fold(root.to_path_buf(), |path, segment| path.join(segment)))
+}
+
+/// 删除 npm 包目录前的安全前置：包名结构合法、目标存在且真实路径位于根目录内。
+pub fn safe_remove_package_target(root: &Path, id: &str) -> Result<PathBuf, String> {
+    let dir = join_package(root, id)?;
+    if !dir.exists() {
+        return Err("TARGET_NOT_FOUND: package directory does not exist".to_string());
+    }
+    ensure_within(&dir, root)
+}
+
+#[cfg(test)]
+mod package_name_tests {
+    use super::{join_package, validate_package_name};
+
+    #[test]
+    fn package_name_accepts_only_one_optional_scope() {
+        for good in ["dshmarket", "dsh-1.2.3", "@scope/name", "@scope/name_2"] {
+            assert!(validate_package_name(good).is_ok(), "{good:?}");
+        }
+        for bad in [
+            "foo/bar/baz",
+            "foo/../../target",
+            "@scope",
+            "@scope/",
+            "@/name",
+            "@scope/name/extra",
+            "../target",
+            "/tmp/plugin",
+            "scope\\name",
+        ] {
+            assert!(validate_package_name(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn join_package_preserves_scoped_package_layout() {
+        let root = std::path::Path::new("/tmp/profile/node_modules");
+        assert_eq!(
+            join_package(root, "@scope/name").unwrap(),
+            root.join("@scope").join("name")
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,7 +192,10 @@ mod tests {
 
     #[test]
     fn validate_id_rejects_traversal() {
-        for bad in ["..", ".", "../x", "..\\x", "/etc", "\\etc", "a/b", "a b", "a\tb", "a:b"] {
+        for bad in [
+            "..", ".", "../x", "..\\x", "/etc", "\\etc", "a/b", "a b", "a\tb", "a:b", " web ",
+            "\tweb", "web\n",
+        ] {
             assert!(validate_id(bad).is_err(), "should reject {bad:?}");
         }
         for good in ["web", "my-profile", "dsh-1.2.3", "plugin-a_b", "app-7"] {

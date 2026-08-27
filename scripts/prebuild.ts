@@ -1,9 +1,11 @@
+import type { GitHubSource } from './preset-source'
 /**
  * prebuild：把 `src-tauri/resources/preset-plugins.json` 中标记 `internal: true`
  * 的插件制备为随包产物，拷入 `src-tauri/resources/preset-plugins/<id>/`
  * （随 `bundle.resources` 随安装包分发）。两种来源：
  *
- * - `github:owner/repo`：从上游仓库克隆、安装依赖并构建（源码形态的插件）；
+ * - `github:owner/repo[#<full-commit-sha>]`：从上游仓库克隆、安装依赖并构建
+ *   （源码形态的插件；指定 SHA 时按该不可变版本检出）；
  * - npm 包名（`name[@version]`）：从 npm registry 拉取已发布产物，跳过构建
  *   （发布包自带 lib/，如 dsh-tauri@0.2.0）。
  *
@@ -15,6 +17,7 @@
  * 构建机器需可访问 GitHub 与 npm registry。通过 `tsx scripts/prebuild.ts`
  * 直接运行（TS + ESM），无需预编译。
  */
+import { Buffer } from 'node:buffer'
 import { spawnSync } from 'node:child_process'
 import {
   cpSync,
@@ -29,17 +32,24 @@ import {
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
+import { pathToFileURL } from 'node:url'
+import {
+  matchesSha512Integrity,
+  parseGitHubSource,
+  parseNpmSource,
+  parseSha512Integrity,
+} from './preset-source'
 
 interface PresetPlugin {
   id: string
   spec: string
   internal?: boolean
+  integrity?: string
 }
 
 const REPO_ROOT = resolve(import.meta.dirname, '..')
 const PRESET_FILE = join(REPO_ROOT, 'src-tauri', 'resources', 'preset-plugins.json')
 const BUNDLE_ROOT = join(REPO_ROOT, 'src-tauri', 'resources', 'preset-plugins')
-const GIT_URL_RE = /^github:([^#/]+\/[^#/]+)(?:#.*)?$/
 
 function die(message: string): never {
   console.error(`[prebuild] ${message}`)
@@ -62,37 +72,87 @@ function run(program: string, args: readonly string[], cwd: string): void {
   }
 }
 
-/** `github:owner/repo[#ref]` → 可克隆的 https URL（忽略 ref，拉默认分支最新）。 */
-function githubUrl(spec: string): string {
-  const match = GIT_URL_RE.exec(spec)
-  if (match === null) {
-    die(`internal 插件 spec 必须是 github:owner/repo 形式，当前为: ${spec}`)
+/** 克隆 GitHub 来源；指定 revision 时按完整 SHA 取对象并脱离分支检出，避免构建漂移。 */
+function cloneGitHubSource(preset: PresetPlugin, temp: string): string {
+  let source: GitHubSource
+  try {
+    source = parseGitHubSource(preset.spec)
   }
-  const repo = match[1].replace(/\.git$/, '')
-  return `https://github.com/${repo}.git`
-}
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    die(`${preset.id}: ${message}`)
+  }
 
-/** `name[@version]`（含 scoped `@scope/name[@version]`）→ 裸包名，用于定位 node_modules。 */
-function npmPackageName(spec: string): string {
-  const at = spec.indexOf('@', spec.startsWith('@') ? spec.indexOf('/') + 1 : 0)
-  return at === -1 ? spec : spec.slice(0, at)
+  const clone = join(temp, preset.id)
+  // `git clone --branch <sha>` 不支持任意提交 SHA；初始化空仓库后直接 fetch 该
+  // 对象既能保留浅克隆，也能确保最终检出的是清单固定的不可变版本。
+  run('git', ['init', clone], temp)
+  run('git', ['-C', clone, 'remote', 'add', 'origin', source.remoteUrl], temp)
+  run('git', ['-C', clone, 'fetch', '--depth', '1', 'origin', source.revision], temp)
+  run('git', ['-C', clone, 'checkout', '--detach', '--quiet', 'FETCH_HEAD'], temp)
+  return clone
 }
 
 /**
- * 从 npm registry 拉取已发布产物：临时工程里 `pnpm add <spec>`，产物即
- * `node_modules/<name>/`（发布包自带 lib/ 等运行必需文件，无需再构建）。
- * 依赖 pnpm 在 PATH 上（与 git 来源流程同一前提）。
+ * 下载内置 npm tarball 并先验证固定 SHA-512 SRI。只接受 registry.npmjs.org 的
+ * 精确版本 URL，且禁用重定向，避免依赖 npm 元数据与安装器的第二次下载之间出现
+ * 内容漂移；只有验证后的本地 tarball 会交给 pnpm 安装。
  */
-function fetchNpmPackage(preset: PresetPlugin, temp: string): string {
+async function downloadVerifiedNpmTarball(
+  preset: PresetPlugin,
+  tarballUrl: string,
+  integrity: string,
+  temp: string,
+): Promise<string> {
+  let response: Response
+  try {
+    response = await fetch(tarballUrl, { redirect: 'error' })
+  }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    die(`${preset.id}: npm tarball 下载失败: ${message}`)
+  }
+
+  if (!response.ok) {
+    die(`${preset.id}: npm tarball 下载失败: HTTP ${response.status}`)
+  }
+
+  const content = Buffer.from(await response.arrayBuffer())
+  if (!matchesSha512Integrity(content, integrity)) {
+    die(`${preset.id}: npm tarball SHA-512 完整性校验失败`)
+  }
+
+  const tarball = join(temp, `${preset.id}.tgz`)
+  writeFileSync(tarball, content)
+  return tarball
+}
+
+/** 从校验通过的本地 tarball 安装内置 npm 插件，防止 pnpm 再次走网络下载。 */
+async function fetchNpmPackage(preset: PresetPlugin, temp: string): Promise<string> {
+  if (preset.integrity === undefined) {
+    die(`${preset.id}: internal npm 插件必须指定 SHA-512 integrity`)
+  }
+
+  let source: ReturnType<typeof parseNpmSource>
+  try {
+    source = parseNpmSource(preset.spec)
+    parseSha512Integrity(preset.integrity)
+  }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    die(`${preset.id}: ${message}`)
+  }
+
+  const tarball = await downloadVerifiedNpmTarball(preset, source.tarballUrl, preset.integrity, temp)
   const project = join(temp, 'project')
   mkdirSync(project, { recursive: true })
   writeFileSync(join(project, 'package.json'), JSON.stringify({ private: true }))
-  run('pnpm', ['add', preset.spec, '--ignore-scripts'], project)
-  const pkgDir = join(project, 'node_modules', npmPackageName(preset.spec))
+  run('pnpm', ['add', pathToFileURL(tarball).href, '--ignore-scripts'], project)
+  const pkgDir = join(project, 'node_modules', source.packageName)
   if (!existsSync(join(pkgDir, 'package.json'))) {
     die(`${preset.id}: npm 安装后未找到产物 ${pkgDir}`)
   }
-  console.log(`[prebuild] ${preset.id}: 来源 npm ${preset.spec}`)
+  console.log(`[prebuild] ${preset.id}: 来源 npm ${preset.spec}（SHA-512 已验证）`)
   return pkgDir
 }
 
@@ -127,15 +187,14 @@ function collectBundle(preset: PresetPlugin, clone: string): void {
 }
 
 /** 构建单个 internal 插件：git 来源（克隆 → 装依赖 → 构建）或 npm 来源（拉产物）。 */
-function buildPlugin(preset: PresetPlugin): void {
+async function buildPlugin(preset: PresetPlugin): Promise<void> {
   const dest = join(BUNDLE_ROOT, preset.id)
   rmSync(dest, { recursive: true, force: true })
 
   const temp = mkdtempSync(join(tmpdir(), `dsh-internal-${preset.id}-`))
   let source: string
   if (preset.spec.startsWith('github:')) {
-    const clone = join(temp, preset.id)
-    run('git', ['clone', '--depth', '1', '--quiet', githubUrl(preset.spec), clone], temp)
+    const clone = cloneGitHubSource(preset, temp)
 
     const revision = spawnSync('git', ['-C', clone, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' })
     if (revision.status === 0) {
@@ -154,7 +213,7 @@ function buildPlugin(preset: PresetPlugin): void {
     source = clone
   }
   else {
-    source = fetchNpmPackage(preset, temp)
+    source = await fetchNpmPackage(preset, temp)
   }
 
   collectBundle(preset, source)
@@ -162,7 +221,7 @@ function buildPlugin(preset: PresetPlugin): void {
   console.log(`[prebuild] ${preset.id}: 产物已就绪 → ${dest}`)
 }
 
-function main(): void {
+async function main(): Promise<void> {
   if (!existsSync(PRESET_FILE)) {
     die(`未找到预设清单 ${PRESET_FILE}`)
   }
@@ -174,9 +233,12 @@ function main(): void {
   }
   console.log(`[prebuild] 拉取 ${internal.length} 个 internal 插件: ${internal.map(p => p.id).join(', ')}`)
   for (const preset of internal) {
-    buildPlugin(preset)
+    await buildPlugin(preset)
   }
   console.log(`[prebuild] 完成 → ${BUNDLE_ROOT}`)
 }
 
-main()
+void main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  die(message)
+})

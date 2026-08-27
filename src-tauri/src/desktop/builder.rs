@@ -248,7 +248,8 @@ pub fn install_macos_menu(app: &tauri::AppHandle<Wry>) -> tauri::Result<()> {
     let cut = PredefinedMenuItem::cut(app, Some(&crate::config::i18n::t("menu.cut")))?;
     let copy = PredefinedMenuItem::copy(app, Some(&crate::config::i18n::t("menu.copy")))?;
     let paste = PredefinedMenuItem::paste(app, Some(&crate::config::i18n::t("menu.paste")))?;
-    let select_all = PredefinedMenuItem::select_all(app, Some(&crate::config::i18n::t("menu.select_all")))?;
+    let select_all =
+        PredefinedMenuItem::select_all(app, Some(&crate::config::i18n::t("menu.select_all")))?;
     let edit_separator_after_redo = PredefinedMenuItem::separator(app)?;
     let edit_separator_before_select_all = PredefinedMenuItem::separator(app)?;
     let edit_menu = Submenu::with_id_and_items(

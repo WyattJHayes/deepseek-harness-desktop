@@ -12,6 +12,7 @@ use super::shim::SHIM_CMD_NAME;
 use super::shim::SHIM_SH_NAME;
 
 /// Windows 下 shim 根目录名（`%LOCALAPPDATA%\<此目录>\bin`）
+#[cfg(windows)]
 const CLI_ROOT_DIR_NAME: &str = "deepseek-harness";
 
 /// Unix 下 shim 所在目录（XDG 约定）
@@ -114,10 +115,14 @@ pub fn path_registered(app_handle: &AppHandle) -> bool {
 /// "用户优先"策略：安装时（`Pnpm::check_installed`）用户已有 pnpm 则跳过
 /// 捆绑安装；`pnpm` shim 运行时也会优先转发到用户的 pnpm。
 pub fn find_user_pnpm(app_handle: &AppHandle) -> Option<PathBuf> {
-    let mut dirs: Vec<PathBuf> =
+    let dirs: Vec<PathBuf> =
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
     #[cfg(windows)]
-    append_windows_pnpm_dirs(&mut dirs);
+    let dirs = {
+        let mut dirs = dirs;
+        append_windows_pnpm_dirs(&mut dirs);
+        dirs
+    };
     find_pnpm_in_dirs(&get_bin_dir(app_handle), &dirs)
 }
 
@@ -348,7 +353,9 @@ fn write_user_path(new_value: &str) -> Result<(), String> {
         RegCloseKey(hkey);
 
         if ret != 0 {
-            return Err(format!("failed to write HKCU\\Environment\\Path (error {ret})"));
+            return Err(format!(
+                "failed to write HKCU\\Environment\\Path (error {ret})"
+            ));
         }
         Ok(())
     }
@@ -403,7 +410,9 @@ fn path_contains_token(path_value: &str, token: &str) -> bool {
 fn remove_path_token(path_value: &str, token: &str) -> String {
     let token_lower = token.to_lowercase();
     let unexpanded_lower = token_lower.replace(
-        &std::env::var("LOCALAPPDATA").unwrap_or_default().to_lowercase(),
+        &std::env::var("LOCALAPPDATA")
+            .unwrap_or_default()
+            .to_lowercase(),
         "%localappdata%",
     );
     let kept: Vec<&str> = path_value
@@ -434,9 +443,7 @@ fn inject_shell_rc(app_handle: &AppHandle) -> Result<(), String> {
         .path()
         .home_dir()
         .map_err(|_| "failed to resolve home directory".to_string())?;
-    let block = format!(
-        "{RC_MARK_START}\nexport PATH=\"$HOME/.local/bin:$PATH\"\n{RC_MARK_END}\n"
-    );
+    let block = format!("{RC_MARK_START}\nexport PATH=\"$HOME/.local/bin:$PATH\"\n{RC_MARK_END}\n");
 
     for name in RC_FILES {
         let rc_path = home.join(name);
@@ -627,7 +634,10 @@ mod tests {
         let stale = format!("alias ll='ls -alF'\n{RC_BLOCK}export NVM_DIR=\"$HOME/.nvm\"\n");
         let next = upsert_rc_block(&stale, RC_BLOCK);
         let stripped = strip_rc_block(&next);
-        assert_eq!(stripped, "alias ll='ls -alF'\nexport NVM_DIR=\"$HOME/.nvm\"\n");
+        assert_eq!(
+            stripped,
+            "alias ll='ls -alF'\nexport NVM_DIR=\"$HOME/.nvm\"\n"
+        );
         assert!(next.ends_with(RC_BLOCK));
         assert_eq!(next.matches(RC_MARK_START).count(), 1);
     }

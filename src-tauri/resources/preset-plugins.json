@@ -13,6 +13,7 @@
   {
     "id": "dsh-tauri",
     "spec": "dsh-tauri@0.2.1",
+    "integrity": "sha512-8bnHyvqPPB0BvOSjseZvHaJ+LgKt0STZxPNGm2HomsBkLXsskIMHFAk9Pd1ENcnywU+wzewL6hUgQcmmnOKHiA==",
     "name": "DSH Tauri",
     "internal": true,
     "description": "Message bridge for the DeepSeek Harness desktop shell",
@@ -23,6 +24,7 @@
     "id": "dsh-tauri-ui",
     "spec": "dsh-tauri-ui@0.1.1",
     "internal": true,
+    "integrity": "sha512-u6nTxH7x+zSDhlEPhz+XmJrStbOF/jsxVeg6kCpg6WKMK2i/I3+KQV+SrxwGwPBPBZ3CLyXk+lDzjXRBJ7LGnQ==",
     "name": "DSH Tauri UI",
     "description": "Customized Tauri UI plugin for the DeepSeek Harness desktop shell (skeleton): registers the shell.overlay seat for the future desktop chrome",
     "repoUrl": "https://github.com/dsh-tauri-desk/dsh-tauri-ui",
@@ -32,6 +34,7 @@
     "id": "dsh-tauri-worktree",
     "spec": "dsh-tauri-worktree@0.1.3",
     "internal": true,
+    "integrity": "sha512-yxLkT3aCKwjpnIquVzv2ZDn3pXOPJFPUzEIAVMCUCmQ44lH6X8PepknNm+vzW5BXm6tcGS0ZTTnnsV3hhI+lTg==",
     "name": "DSH Tauri Worktree",
     "description": "Per-session isolated Git Worktree for the desktop shell: switch a conversation to its own isolated worktree, then check changes back into a local dsh/ branch or discard them.",
     "repoUrl": "https://github.com/dsh-tauri-desk/dsh-tauri-worktree",
@@ -39,7 +42,7 @@
   },
   {
     "id": "dsh-tauri-panel",
-    "spec": "dsh-tauri-panel@0.1.1",
+    "spec": "github:dsh-tauri-desk/dsh-tauri-panel#2743acba2265599209478db211418cfd91f74daa",
     "internal": true,
     "name": "DSH Tauri Panel",
     "description": "Upper panel UI for the desktop sidebar: compact logo row (32px), a panel area holding the New Session menu item plus third-party panel items (sidebar.panel.action protocol slot).",

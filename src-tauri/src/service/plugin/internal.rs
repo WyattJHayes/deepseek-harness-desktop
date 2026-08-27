@@ -47,9 +47,15 @@ pub(crate) async fn ensure(app_handle: &AppHandle) -> Result<(), String> {
         .await;
     // 前端据此在「Loading internal plugins…」与「Loading plugins…」间切换；
     // 事件在服务进程启动前发出，于健康轮询期间到达，先于 dsh 自家的 boot 输出。
-    let _ = app_handle.emit("internal-plugins-phase", InternalPluginsPhase { phase: "loading" });
+    let _ = app_handle.emit(
+        "internal-plugins-phase",
+        InternalPluginsPhase { phase: "loading" },
+    );
     let outcome = ensure_inner(app_handle, &internal).await;
-    let _ = app_handle.emit("internal-plugins-phase", InternalPluginsPhase { phase: "done" });
+    let _ = app_handle.emit(
+        "internal-plugins-phase",
+        InternalPluginsPhase { phase: "done" },
+    );
     outcome
 }
 
@@ -187,7 +193,10 @@ mod tests {
         // 指向其它位置（旧版本安装目录等）
         assert!(!dep_matches_spec("link:D:/elsewhere/dsh-tauri", expected));
         // 同名不同宿主盘符
-        assert!(!dep_matches_spec("link:D:/Apps/dsh/resources/preset-plugins/dsh-tauri", expected));
+        assert!(!dep_matches_spec(
+            "link:D:/Apps/dsh/resources/preset-plugins/dsh-tauri",
+            expected
+        ));
     }
 
     #[cfg(windows)]

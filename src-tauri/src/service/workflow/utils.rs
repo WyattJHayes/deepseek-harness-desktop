@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 #[cfg(not(target_os = "macos"))]
 use std::net::TcpListener;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
@@ -103,6 +103,7 @@ fn bind_probe(addr: SocketAddr) -> std::io::Result<()> {
 /// 因此探测前先设 SO_REUSEADDR：
 ///   - 真实占用（残留 dsh 等仍 listen 在同一端口）依然 bind 失败 → 判为占用；
 ///   - 上一次探测留下的 linger 不再误判为占用。
+///
 /// SO_REUSEADDR 只放宽 TIME_WAIT/linger 状态的复用，并不会允许两个 socket 同时
 /// listen 同一地址（那是 SO_REUSEPORT 的语义），因此不会掩盖真实监听者。
 /// Windows 上 SO_REUSEADDR 语义不同（可强制覆盖既有监听者），会掩盖真实占用，

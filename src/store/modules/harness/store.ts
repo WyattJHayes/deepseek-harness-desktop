@@ -347,9 +347,13 @@ export const harness = defineStore({
       this.iframeError = false
       try {
         await invoke('launch_harness')
+        if (token !== undefined && token !== bootToken)
+          return
         this.serviceRunning = true
         // 后端遇到端口占用时会自动递增并持久化端口，启动后重新读取真实地址。
         const runtimeInfo = await invoke<{ service_url: string }>('get_runtime_info')
+        if (token !== undefined && token !== bootToken)
+          return
         this.serviceUrl = runtimeInfo.service_url
         this.iframeSrc = generateTimestampedUrl(runtimeInfo.service_url)
 
@@ -462,20 +466,7 @@ export const harness = defineStore({
         if (token !== bootToken)
           return
         console.error('[Harness] startup failed:', err)
-        const startupError = await attachStartupDiagnostics(err)
-        // 尝试从日志定位问题插件：能定位则弹出修复界面（全屏恢复页）
-        await this.reviewStartupRecovery(startupError.logLines ?? startupError.logs ?? [])
-        const keepServiceRunning = startupError.readinessTimedOut === true
-        this.fail(
-          String(startupError),
-          startupError.logs,
-          startupError.pluginConflictHint,
-          startupError.inotifyLimitHint,
-          keepServiceRunning,
-        )
-        if (keepServiceRunning) {
-          void this.recoverReadiness(token)
-        }
+        await this.handleStartupFailure(err, token)
       }
       finally {
         unlistenInstall?.()
@@ -496,6 +487,33 @@ export const harness = defineStore({
       this.inotifyLimitHint = inotifyLimitHint ?? ''
       this.status = 'error'
       this.serviceRunning = keepServiceRunning
+    },
+
+    /** 统一收敛启动失败：展示可重试错误页，并在慢启动超时时继续后台探测。 */
+    async handleStartupFailure(err: unknown, token: number) {
+      if (token !== bootToken)
+        return
+      const startupError = await attachStartupDiagnostics(err)
+      if (token !== bootToken)
+        return
+
+      // 尝试从日志定位问题插件：能定位则弹出修复界面（全屏恢复页）。
+      await this.reviewStartupRecovery(startupError.logLines ?? startupError.logs ?? [])
+      if (token !== bootToken)
+        return
+
+      const keepServiceRunning = startupError.readinessTimedOut === true
+      this.preinstall.error = ''
+      this.fail(
+        String(startupError),
+        startupError.logs,
+        startupError.pluginConflictHint,
+        startupError.inotifyLimitHint,
+        keepServiceRunning,
+      )
+      if (keepServiceRunning) {
+        void this.recoverReadiness(token)
+      }
     },
 
     /**
@@ -752,8 +770,17 @@ export const harness = defineStore({
 
     /** 预装引导结束后的收尾：拉起服务等待就绪，并静默检查更新 */
     async continueAfterPreinstall() {
-      await this.launchAndWait()
-      void harnessUpdater.checkForUpdate()
+      const token = ++bootToken
+      try {
+        await this.launchAndWait(token)
+        if (token === bootToken) {
+          void harnessUpdater.checkForUpdate()
+        }
+      }
+      catch (err) {
+        console.error('[Harness] startup after preinstall failed:', err)
+        await this.handleStartupFailure(err, token)
+      }
     },
 
     /**

@@ -41,6 +41,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       should_release: ${{ steps.meta.outputs.should_release }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
       - name: Checkout release commit
         uses: actions/checkout@v7
@@ -59,8 +60,10 @@ jobs:
           else
             tag=""; should_release=false
           fi
+          prerelease=$(node scripts/release-workflow.mjs prerelease "$tag")
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Create release tag
         if: github.event_name == 'pull_request'
@@ -73,7 +76,15 @@ jobs:
             const ref = `tags/${process.env.RELEASE_TAG}`
             try {
               await github.rest.git.getRef({owner: context.repo.owner, repo: context.repo.repo, ref})
-              await github.rest.git.updateRef({owner: context.repo.owner, repo: context.repo.repo, ref, sha: process.env.RELEASE_SHA, force: true})
+              const existing = await github.rest.repos.getCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: process.env.RELEASE_TAG,
+              })
+              if (existing.data.sha !== process.env.RELEASE_SHA) {
+                throw new Error(`Existing tag ${process.env.RELEASE_TAG} at ${existing.data.sha} does not match release commit ${process.env.RELEASE_SHA}`)
+              }
+              core.info(`Existing tag ${process.env.RELEASE_TAG} already points to the release commit`)
             } catch (error) {
               if (error.status !== 404) throw error
               await github.rest.git.createRef({owner: context.repo.owner, repo: context.repo.repo, ref: `refs/${ref}`, sha: process.env.RELEASE_SHA})
@@ -84,20 +95,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          RELEASE_PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --title "DeepSeek Harness Desktop $RELEASE_TAG" --generate-notes
+            release_flags=(--title "DeepSeek Harness Desktop $RELEASE_TAG" --generate-notes)
+            if [ "$RELEASE_PRERELEASE" = "true" ]; then
+              release_flags+=(--prerelease --latest=false)
+            fi
+            gh release create "$RELEASE_TAG" "${release_flags[@]}"
           fi
           gh release view "$RELEASE_TAG" --json body -q .body > release_notes.md
-          cat >> release_notes.md << 'EOF'
-
-          ### ��� Artifacts
-          - **macOS (Apple Silicon)**: 下载 `aarch64.dmg`
-          - **macOS (Intel)**: 下载 `x64.dmg`
-          - **Windows**: 下载 `.exe`
-          - **Linux (x64)**: 下载 `.AppImage` 或 `.deb`（基于 Ubuntu 22.04 构建，兼容 22.04 及更新版本）
-          EOF
-          gh release edit "$RELEASE_TAG" --notes-file release_notes.md
+          node scripts/release-workflow.mjs notes release_notes.md
+          gh release edit "$RELEASE_TAG" --notes-file release_notes.md --prerelease="$RELEASE_PRERELEASE"
 
   publish:
     # 正式发布由 prepare 创建 tag/Release 后打包；手动触发时进行测试打包
@@ -256,7 +265,7 @@ jobs:
           tagName: ${{ needs.prepare.outputs.tag }}
           releaseName: 'DeepSeek Harness Desktop ${{ needs.prepare.outputs.tag }}'
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           includeUpdaterJson: true
           args: ${{ matrix.args }}
 

@@ -51,6 +51,14 @@ const MAX_ALLOW_LIST_RETRIES: usize = 8;
 /// 自动合成 peer 后 `No matching version found for @deepseek-ai/...` 的假失败。
 const MIN_TRUSTED_PNPM_MAJOR: u32 = 10;
 
+/// 插件仓库网络失败的统一错误，前缀只在边界处添加一次。
+const NETWORK_ERROR_MESSAGE: &str =
+    "NETWORK_ERROR: plugin registry request failed; check network or proxy settings and retry.";
+
+fn network_error_message() -> String {
+    NETWORK_ERROR_MESSAGE.to_string()
+}
+
 /// 校验并安装选中的预装插件：`dsh plugin --profile <当前档案> add <ids...>`
 pub async fn install(app_handle: &AppHandle, ids: &[String]) -> Result<(), String> {
     if ids.is_empty() {
@@ -169,11 +177,9 @@ pub async fn install(app_handle: &AppHandle, ids: &[String]) -> Result<(), Strin
         let network_error = network_error_hint(&last_output).is_some()
             || (exit_code == 3 && last_output.trim().is_empty());
         let hint = git_transport_hint(&last_output);
-        let network_hint = network_error.then_some(
-            "NETWORK_ERROR: plugin registry request failed; check network or proxy settings and retry.",
-        );
+        let network_hint = network_error.then_some(NETWORK_ERROR_MESSAGE);
         let message = if network_error {
-            network_hint.unwrap_or_default().to_string()
+            network_error_message()
         } else {
             pick_error_message(&last_output, hint)
         };
@@ -192,7 +198,7 @@ pub async fn install(app_handle: &AppHandle, ids: &[String]) -> Result<(), Strin
                     line: format!("[network] {network_hint}"),
                 },
             );
-            return Err(format!("NETWORK_ERROR: {network_hint}"));
+            return Err(network_error_message());
         }
         if let Some(hint) = hint {
             log::warn!("git transport failure detected during plugin install: {hint}");
@@ -485,15 +491,12 @@ fn append_command_output(all_output: &mut String, captured: &str) {
 
 /// 升级单个插件：`dsh plugin --profile <当前档案> update <id>`
 pub async fn update(app_handle: &AppHandle, id: &str) -> Result<(), String> {
-    run_single_plugin_command(app_handle, id, "update", &["update".to_string(), id.to_string()])
-        .await
+    run_single_plugin_command(app_handle, id, "update").await
 }
 
 /// 卸载单个插件：`dsh plugin --profile <当前档案> remove <id>`
 pub async fn remove(app_handle: &AppHandle, id: &str) -> Result<(), String> {
-    let command_result =
-        run_single_plugin_command(app_handle, id, "remove", &["remove".to_string(), id.to_string()])
-            .await;
+    let command_result = run_single_plugin_command(app_handle, id, "remove").await;
     // `dsh plugin remove` 以子进程退出码为准，可能出现「命令成功但插件仍在」的
     // 边界（如 bundle 层残留、pnpm 静默失败）；node_modules / lockfile 损坏时
     // （典型：安装只写入了 profile 清单而产物缺失，见 issue #90）pnpm 甚至会
@@ -529,7 +532,6 @@ async fn run_single_plugin_command(
     app_handle: &AppHandle,
     id: &str,
     action: &str,
-    sub_args: &[String],
 ) -> Result<(), String> {
     if id.is_empty() {
         return Err("PLUGIN_EMPTY_ID: plugin id is empty".to_string());
@@ -568,14 +570,7 @@ async fn run_single_plugin_command(
 
     let envs = build_plugin_envs(app_handle, prefer_bundled_pnpm);
 
-    let mut args = vec![
-        dsh_bin.as_os_str().to_os_string(),
-        OsString::from("plugin"),
-        OsString::from("--profile"),
-        OsString::from(active_profile(app_handle)),
-        OsString::from(action),
-    ];
-    args.extend(sub_args.iter().map(OsString::from));
+    let args = build_single_plugin_args(&dsh_bin, &active_profile(app_handle), action, id);
 
     let cwd = config::get_dsh_install_path(app_handle);
     log::info!("Running dsh plugin {action} for {id}");
@@ -595,8 +590,7 @@ async fn run_single_plugin_command(
         let network_error = network_error_hint(&output).is_some()
             || (exit_code == 3 && output.trim().is_empty());
         let message = if network_error {
-            "NETWORK_ERROR: plugin registry request failed; check network or proxy settings and retry."
-                .to_string()
+            network_error_message()
         } else {
             pick_error_message(&output, git_transport_hint(&output))
         };
@@ -604,7 +598,7 @@ async fn run_single_plugin_command(
             log::warn!("failed to record plugin error for {id}: {e}");
         }
         if network_error {
-            return Err("NETWORK_ERROR: plugin registry request failed; check network or proxy settings and retry.".to_string());
+            return Err(network_error_message());
         }
         return Err(format!(
             "PLUGIN_{}_FAILED: dsh plugin exited with code {exit_code}",
@@ -623,6 +617,23 @@ async fn run_single_plugin_command(
     }
     log::info!("dsh plugin {action} succeeded for {id}");
     Ok(())
+}
+
+/// 构造单插件操作参数，action 与 id 各出现一次。
+fn build_single_plugin_args(
+    dsh_bin: &Path,
+    profile: &str,
+    action: &str,
+    id: &str,
+) -> Vec<OsString> {
+    vec![
+        dsh_bin.as_os_str().to_os_string(),
+        OsString::from("plugin"),
+        OsString::from("--profile"),
+        OsString::from(profile),
+        OsString::from(action),
+        OsString::from(id),
+    ]
 }
 
 /// 从 dsh/pnpm 失败输出中提取可展示的错误消息：优先 git 传输层提示；
@@ -1320,8 +1331,14 @@ pub(crate) fn harness_prefer_bundled_pnpm(app_handle: &AppHandle) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use super::{append_command_output, apply_allow_build_keys, collapse_allow_builds_duplicates, dep_path_to_name, extract_allow_line_key, extract_only_builds_git_name, git_transport_hint, normalize_git_spec, parse_allowlist_keys, parse_store_major_from_modules_yaml, preset_spec_for_install, shell_quote_spec, silent_install_failure_detail, PreinstallPluginInfo};
+    use super::{
+        append_command_output, apply_allow_build_keys, build_single_plugin_args,
+        collapse_allow_builds_duplicates, dep_path_to_name, extract_allow_line_key,
+        extract_only_builds_git_name, git_transport_hint, normalize_git_spec, parse_allowlist_keys,
+        parse_store_major_from_modules_yaml, preset_spec_for_install, shell_quote_spec,
+        silent_install_failure_detail, network_error_message, PreinstallPluginInfo,
+    };
+    use std::path::{Path, PathBuf};
 
     /// 构造预设条目的测试助手（internal 由各用例显式指定）
     fn preset(id: &str, spec: &str, internal: bool) -> PreinstallPluginInfo {
@@ -1416,6 +1433,33 @@ mod tests {
         append_command_output(&mut output, "");
 
         assert_eq!(output, "ERR_PNPM_IGNORED_BUILDS");
+    }
+
+    #[test]
+    fn single_plugin_command_contains_action_once() {
+        let args = build_single_plugin_args(Path::new("/tmp/dsh"), "web", "remove", "dshmarket");
+        let rendered: Vec<String> = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+
+        assert_eq!(
+            rendered,
+            vec![
+                "/tmp/dsh",
+                "plugin",
+                "--profile",
+                "web",
+                "remove",
+                "dshmarket"
+            ]
+        );
+    }
+
+    #[test]
+    fn network_failure_message_has_one_prefix() {
+        let message = network_error_message();
+        assert_eq!(message.matches("NETWORK_ERROR:").count(), 1);
     }
 
     #[test]

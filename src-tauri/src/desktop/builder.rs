@@ -335,22 +335,23 @@ pub fn build_main_window(app: &tauri::AppHandle<Wry>) -> tauri::Result<tauri::We
     // Windows/WebView2 在 build() 尚未返回时就可能绘制窗口。先隐藏创建，
     // 等保存的几何恢复完成再显示，避免启动时先闪出默认尺寸再跳到历史尺寸。
     #[cfg(windows)]
+    let webview_builder = webview_builder.visible(false);
+
+    // 开发版使用独立 WebView2 数据目录，避免已有 release 实例、热重启残留
+    // 或其他同标识实例占用同一 User Data 管道。正式版保留 Tauri 默认目录，
+    // 使升级用户继续使用既有浏览数据。
+    #[cfg(all(windows, debug_assertions))]
+    let webview_builder = webview_builder.data_directory({
+        let mut directory = app
+            .path()
+            .app_local_data_dir()
+            .expect("Failed to resolve app local data directory");
+        directory.push("EBWebView-dev");
+        directory
+    });
+
+    #[cfg(windows)]
     let webview_builder = webview_builder
-        .visible(false)
-        // 开发版使用独立 WebView2 数据目录，避免已有 release 实例、热重启残留
-        // 或其他同标识实例占用同一 User Data 管道，触发 HRESULT 0x8007139F。
-        .data_directory({
-            let mut directory = app
-                .path()
-                .app_local_data_dir()
-                .expect("Failed to resolve app local data directory");
-            directory.push(if cfg!(debug_assertions) {
-                "EBWebView-dev"
-            } else {
-                "EBWebView"
-            });
-            directory
-        })
         // WebView2 原生非客户区可直接接收触摸输入；同时禁用会抢占手势的弹性滚动。
         .additional_browser_args(windows_drag_browser_args());
 

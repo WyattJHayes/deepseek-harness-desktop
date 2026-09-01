@@ -335,6 +335,12 @@ fn sync_macos_fullscreen_menu(window: &tauri::Window<Wry>) {
 pub fn build_main_window(app: &tauri::AppHandle<Wry>) -> tauri::Result<tauri::WebviewWindow<Wry>> {
     let app_handle = app.clone();
 
+    #[cfg(not(windows))]
+    let paste_shim_js = crate::desktop::paste::paste_shim_js(
+        &app.state::<crate::bridge::clipboard::ClipboardBridgeState>()
+            .script_secret(),
+    );
+
     #[cfg(windows)]
     let _notification_handlers_registered = Arc::new(AtomicBool::new(false));
     #[cfg(windows)]
@@ -426,7 +432,7 @@ pub fn build_main_window(app: &tauri::AppHandle<Wry>) -> tauri::Result<tauri::We
         .initialization_script_for_all_frames(crate::desktop::notification::NOTIFICATION_SHIM_JS)
         .initialization_script_for_all_frames(crate::desktop::nav::NAV_SHIM_JS)
         .initialization_script_for_all_frames(crate::desktop::style::IFRAME_STYLES_JS)
-        .initialization_script_for_all_frames(crate::desktop::paste::PASTE_SHIM_JS)
+        .initialization_script_for_all_frames(&paste_shim_js)
         .initialization_script_for_all_frames(crate::desktop::plugin_boot::PLUGIN_BOOT_RELOAD_JS)
         .initialization_script_for_all_frames(crate::desktop::zoom::ZOOM_SHORTCUT_BRIDGE_JS);
 
@@ -574,6 +580,10 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
 // configure tauri builder
 pub fn builder() -> tauri::Builder<tauri::Wry> {
     let builder = tauri::Builder::default()
+        .manage(
+            crate::bridge::clipboard::ClipboardBridgeState::new()
+                .expect("CLIPBOARD_BRIDGE_INIT: secure random unavailable"),
+        )
         .setup(|app| {
             let app_handle = app.handle().clone();
             build_main_window(&app_handle)?;

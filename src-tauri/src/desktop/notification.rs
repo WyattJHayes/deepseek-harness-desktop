@@ -289,6 +289,11 @@ pub fn enable_notification_permissions(
         parent: tauri::WebviewWindow<tauri::Wry>,
     ) {
         let parent_for_frame = parent.clone();
+        let clipboard_secret = parent
+            .app_handle()
+            .state::<crate::bridge::clipboard::ClipboardBridgeState>()
+            .script_secret();
+        let paste_shim_js = crate::desktop::paste::paste_shim_js(&clipboard_secret);
         let mut permission_token = 0i64;
 
         let _ = frame3.add_PermissionRequested(
@@ -328,7 +333,7 @@ pub fn enable_notification_permissions(
                     crate::desktop::notification::NOTIFICATION_SHIM_JS,
                     crate::desktop::nav::NAV_SHIM_JS,
                     crate::desktop::style::IFRAME_STYLES_JS,
-                    crate::desktop::paste::PASTE_SHIM_JS,
+                    paste_shim_js.as_str(),
                     crate::desktop::plugin_boot::PLUGIN_BOOT_RELOAD_JS,
                     crate::desktop::zoom::ZOOM_SHORTCUT_BRIDGE_JS,
                 ] {

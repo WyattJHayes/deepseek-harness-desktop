@@ -26,12 +26,10 @@ interface PluginErrorMessage {
   id?: string
   /** 异常消息 */
   error?: string
-  /** 记录动作：runtime / install / update（默认 runtime） */
-  action?: string
 }
 
 /**
- * iframe 剪贴板图片回退请求（desktop/paste::PASTE_SHIM_JS 发来）。
+ * iframe 剪贴板图片回退请求（由 desktop/paste 的受保护脚本发来）。
  * Linux/WebKitGTK 下 dsh iframe 的 paste 事件拿不到图片，宿主侧据此调用
  * `read_clipboard_image` 读系统剪贴板，再把 PNG data URL 回传给 iframe 重新贴图。
  */
@@ -39,6 +37,19 @@ interface ClipboardImageRequest {
   source?: 'dsh-clipboard-image-bridge'
   type?: 'dsh://clipboard-image:read'
   id?: string
+  nonce?: string
+  issued_at?: number
+  proof?: string
+}
+
+const MAX_PLUGIN_ERROR_ID_BYTES = 214
+const MAX_PLUGIN_ERROR_MESSAGE_CHARS = 2000
+const MAX_PLUGIN_ERROR_MESSAGE_BYTES = 8192
+
+function isBoundedPluginErrorText(value: string, maxChars: number, maxBytes: number) {
+  return value.length > 0
+    && value.length <= maxChars
+    && new TextEncoder().encode(value).byteLength <= maxBytes
 }
 
 interface PluginBootMessage {
@@ -94,13 +105,22 @@ export function useIframeShim(iframeRef: RefObject<HTMLIFrameElement | null>) {
     if (!iframeOrigin || event.origin !== iframeOrigin) {
       return
     }
-    if (data.type !== 'dsh://plugin-error' || !data.id || !data.error) {
+    if (
+      data.type !== 'dsh://plugin-error'
+      || typeof data.id !== 'string'
+      || typeof data.error !== 'string'
+      || !isBoundedPluginErrorText(data.id, MAX_PLUGIN_ERROR_ID_BYTES, MAX_PLUGIN_ERROR_ID_BYTES)
+      || !isBoundedPluginErrorText(
+        data.error,
+        MAX_PLUGIN_ERROR_MESSAGE_CHARS,
+        MAX_PLUGIN_ERROR_MESSAGE_BYTES,
+      )
+    ) {
       return
     }
     void invoke('report_plugin_error', {
       id: data.id,
       error: data.error,
-      action: data.action ?? 'runtime',
     })
       .then(() => {
         void queryClient.invalidateQueries({ queryKey: ['plugins'] })
@@ -123,11 +143,24 @@ export function useIframeShim(iframeRef: RefObject<HTMLIFrameElement | null>) {
     if (!iframeOrigin || event.origin !== iframeOrigin) {
       return
     }
-    if (data.type !== 'dsh://clipboard-image:read' || !data.id) {
+    if (
+      data.type !== 'dsh://clipboard-image:read'
+      || typeof data.id !== 'string'
+      || typeof data.nonce !== 'string'
+      || typeof data.issued_at !== 'number'
+      || typeof data.proof !== 'string'
+      || data.nonce.length !== 32
+      || !Number.isSafeInteger(data.issued_at)
+      || data.issued_at <= 0
+      || data.proof.length !== 44
+    ) {
       return
     }
     // 在闭包外把收窄后的值固定到局部常量，避免 TS 在闭包内丢失控制流收窄
     const reqId = data.id
+    const nonce = data.nonce
+    const issuedAt = data.issued_at
+    const proof = data.proof
     const origin = iframeOrigin
     function reply(dataUrl: string | null) {
       iframeRef.current?.contentWindow?.postMessage(
@@ -135,7 +168,11 @@ export function useIframeShim(iframeRef: RefObject<HTMLIFrameElement | null>) {
         origin,
       )
     }
-    void invoke<{ data_url?: string } | null>('read_clipboard_image')
+    void invoke<{ data_url?: string } | null>('read_clipboard_image', {
+      nonce,
+      issued_at: issuedAt,
+      proof,
+    })
       .then(result => reply(result?.data_url ?? null))
       .catch((error) => {
         console.error('[clipboard-image] read_clipboard_image failed:', error)

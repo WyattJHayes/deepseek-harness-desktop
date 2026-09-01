@@ -134,15 +134,14 @@ pub fn report_plugin_error(
     app_handle: AppHandle,
     id: String,
     error: String,
-    action: Option<String>,
+    _action: Option<String>,
 ) -> Result<(), String> {
-    plugin::errors::record(
-        &app_handle,
-        &id,
-        action.as_deref().unwrap_or("runtime"),
-        &error,
-    )?;
+    plugin::errors::record_runtime(&app_handle, &id, &error)?;
     plugin::watch::force_emit(&app_handle);
+    if plugin::recovery::is_internal_plugin(&app_handle, &id) {
+        // 内置插件由启动自愈负责恢复，不能向用户提供会失败的卸载修复动作。
+        return Ok(());
+    }
     // 运行期异常：直接推送修复界面（应用仍在运行，前端以醒目对话框呈现）。
     let info = plugin::PluginRecoveryInfo {
         plugins: vec![id],

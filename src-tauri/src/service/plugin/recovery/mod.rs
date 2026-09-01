@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use super::errors;
+use super::installed::{installed_name, is_installed};
 
 use extract::{
     classify_reason, extract_duplicate_loader_entry, extract_plugin_refs, extract_slot_conflict,
@@ -51,7 +52,7 @@ fn is_core_package(name: &str) -> bool {
 }
 
 /// 是否为合法的 npm 包名（可带 scope）。用于过滤日志里提取到的候选引用。
-fn is_package_name(s: &str) -> bool {
+pub(crate) fn is_package_name(s: &str) -> bool {
     let s = s.trim();
     if s.is_empty() || s.contains(':') || s.chars().any(|c| c.is_whitespace()) {
         return false;
@@ -97,6 +98,14 @@ fn is_package_name(s: &str) -> bool {
 /// 是否是可行动的第三方插件引用（排除核心包与 @deepseek-ai 官方包）。
 pub(crate) fn is_actionable_plugin_ref(s: &str) -> bool {
     is_package_name(s) && !is_core_package(s.trim())
+}
+
+/// 判断插件是否来自随应用分发的内置清单；内置插件由启动自愈恢复，不能走卸载修复。
+pub(crate) fn is_internal_plugin(app_handle: &AppHandle, id: &str) -> bool {
+    super::preset::load_presets(app_handle)
+        .into_iter()
+        .filter(|preset| preset.internal)
+        .any(|preset| installed_name(&preset) == id)
 }
 
 /// 启动失败时前端读到的日志行（已清洗 ANSI），序列化给前端（camelCase）。
@@ -161,6 +170,16 @@ pub fn uninstall(app_handle: &AppHandle, id: &str) -> Result<(), String> {
     if !is_actionable_plugin_ref(id) {
         return Err(format!(
             "PLUGIN_RECOVERY_REFUSED: refusing to remove core/official package {id}"
+        ));
+    }
+    if !is_installed(app_handle, id) {
+        return Err(format!(
+            "PLUGIN_RECOVERY_UNKNOWN_PLUGIN: plugin is not installed: {id}"
+        ));
+    }
+    if is_internal_plugin(app_handle, id) {
+        return Err(format!(
+            "PLUGIN_RECOVERY_REFUSED: refusing to remove internal package {id}"
         ));
     }
     let profile = profile_dir(app_handle);

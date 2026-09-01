@@ -13,7 +13,15 @@
 //! 其余平台 `initialization_script_for_all_frames`）。脚本带 `__dsh_clipboard_image_bridge__`
 //! 幂等守卫，重复注入安全；只处理「直接 iframe」发来的剪贴板请求，避免多层 iframe 误转发。
 
-pub(crate) const PASTE_SHIM_JS: &str = r#"(function () {
+/// 构造带会话密钥的剪贴板回退脚本。
+///
+/// 密钥只通过初始化脚本交给闭包；脚本在页面代码运行前捕获原生加密 API 并导入
+/// 不可导出的密钥，之后只会在真实粘贴事件里生成 nonce 并计算证明。宿主收到请求后
+/// 还会在 Rust 侧校验 HMAC 和 nonce 的单次消费状态。
+pub(crate) fn paste_shim_js(secret: &str) -> String {
+    let secret_literal =
+        serde_json::to_string(secret).expect("clipboard bridge secret should be serializable");
+    r#"(function () {
   if (window.__dsh_clipboard_image_bridge__) return;
   window.__dsh_clipboard_image_bridge__ = true;
 
@@ -21,21 +29,191 @@ pub(crate) const PASTE_SHIM_JS: &str = r#"(function () {
   var REQ_SRC = 'dsh-clipboard-image-bridge';
   var RES_SRC = 'dsh-desktop-clipboard';
   var REQ_TYPE = 'dsh://clipboard-image:read';
+  var BRIDGE_SECRET_B64 = __DSH_CLIPBOARD_BRIDGE_SECRET__;
+  var SIGNING_CONTEXT = 'dsh-clipboard-image-v1:';
+  var MAX_PENDING = 32;
+  var REQUEST_TIMEOUT_MS = 5000;
+
+  // 初始化脚本先于页面脚本执行；捕获原生引用，避免页面改写 Web Crypto 后
+  // 在真实粘贴发生时截获原始密钥或签名输入。
+  var NativePromise = window.Promise;
+  var NativePromiseThen = NativePromise && NativePromise.prototype && NativePromise.prototype.then;
+  var NativePromiseReject = NativePromise && typeof NativePromise.reject === 'function'
+    ? NativePromise.reject.bind(NativePromise)
+    : null;
+  var NativeUint8Array = window.Uint8Array;
+  var NativeAtob = typeof window.atob === 'function' ? window.atob.bind(window) : null;
+  var NativeBtoa = typeof window.btoa === 'function' ? window.btoa.bind(window) : null;
+  var NativeTextEncoder = window.TextEncoder;
+  var NativeTextEncoderEncode = NativeTextEncoder && NativeTextEncoder.prototype
+    ? NativeTextEncoder.prototype.encode
+    : null;
+  var NativeDate = window.Date;
+  var NativeDateNow = NativeDate && typeof NativeDate.now === 'function'
+    ? NativeDate.now.bind(NativeDate)
+    : null;
+  var NativeString = typeof window.String === 'function' ? window.String : null;
+  var NativeStringFromCharCode = NativeString && typeof NativeString.fromCharCode === 'function'
+    ? NativeString.fromCharCode.bind(NativeString)
+    : null;
+  var NativeSetTimeout = typeof window.setTimeout === 'function'
+    ? window.setTimeout.bind(window)
+    : null;
+  var NativeClearTimeout = typeof window.clearTimeout === 'function'
+    ? window.clearTimeout.bind(window)
+    : null;
+  var NativeCrypto = window.crypto;
+  var NativeGetRandomValues = NativeCrypto && typeof NativeCrypto.getRandomValues === 'function'
+    ? NativeCrypto.getRandomValues.bind(NativeCrypto)
+    : null;
+  var NativeSubtle = NativeCrypto && NativeCrypto.subtle;
+  var NativeImportKey = NativeSubtle && typeof NativeSubtle.importKey === 'function'
+    ? NativeSubtle.importKey.bind(NativeSubtle)
+    : null;
+  var NativeSign = NativeSubtle && typeof NativeSubtle.sign === 'function'
+    ? NativeSubtle.sign.bind(NativeSubtle)
+    : null;
 
   var reqSeq = 0;
-  var pending = {}; // id -> { resolve, target }
+  var hmacKeyPromise = null;
+  var pending = {}; // id -> { resolve, target, timeout }
+
+  function resolvePending(id, value) {
+    var item = pending[id];
+    if (!item) return;
+    delete pending[id];
+    if (NativeClearTimeout && item.timeout !== null) NativeClearTimeout(item.timeout);
+    item.resolve(value);
+  }
+
+  function bytesToHex(bytes) {
+    var result = '';
+    for (var i = 0; i < bytes.length; i++) {
+      result += ('0' + bytes[i].toString(16)).slice(-2);
+    }
+    return result;
+  }
+
+  function bytesToBase64(buffer) {
+    if (!NativeUint8Array || !NativeBtoa || !NativeStringFromCharCode) {
+      throw new Error('clipboard bridge base64 unavailable');
+    }
+    var bytes = new NativeUint8Array(buffer);
+    var binary = '';
+    for (var i = 0; i < bytes.length; i++) binary += NativeStringFromCharCode(bytes[i]);
+    return NativeBtoa(binary);
+  }
+
+  function secretBytes() {
+    if (!NativeAtob || !NativeUint8Array) throw new Error('clipboard bridge secret unavailable');
+    var binary = NativeAtob(BRIDGE_SECRET_B64);
+    var bytes = new NativeUint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  function newNonce() {
+    if (!NativeGetRandomValues || !NativeUint8Array) return null;
+    var bytes = new NativeUint8Array(16);
+    try {
+      NativeGetRandomValues(bytes);
+      return bytesToHex(bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function rejectedPromise(message) {
+    return NativePromiseReject ? NativePromiseReject(new Error(message)) : null;
+  }
+
+  function signNonce(nonce, issuedAtText) {
+    if (!hmacKeyPromise || !NativePromiseThen || !NativeSign
+      || !NativeTextEncoder || !NativeTextEncoderEncode) {
+      return rejectedPromise('clipboard bridge crypto unavailable');
+    }
+    var encoded;
+    try {
+      encoded = NativeTextEncoderEncode.call(
+        new NativeTextEncoder(),
+        SIGNING_CONTEXT + nonce + ':' + issuedAtText
+      );
+    } catch (_) {
+      return rejectedPromise('clipboard bridge crypto unavailable');
+    }
+    var signed = NativePromiseThen.call(hmacKeyPromise, function (key) {
+      return NativeSign('HMAC', key, encoded);
+    });
+    return NativePromiseThen.call(signed, bytesToBase64);
+  }
+
+  // 在页面脚本有机会改写全局对象前导入密钥；CryptoKey 不可导出，页面只能看到
+  // 后续真实粘贴产生的单次证明，不能借此伪造新的 nonce。
+  if (NativeImportKey && NativePromiseReject) {
+    try {
+      hmacKeyPromise = NativeImportKey(
+        'raw',
+        secretBytes(),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+    } catch (_) {
+      hmacKeyPromise = rejectedPromise('clipboard bridge crypto unavailable');
+    }
+  }
 
   function requestClipboardImage(target) {
-    return new Promise(function (resolve) {
+    if (!NativePromise || !NativePromiseThen) return null;
+    return new NativePromise(function (resolve) {
+      if (Object.keys(pending).length >= MAX_PENDING) {
+        resolve(null);
+        return;
+      }
       reqSeq += 1;
       var id = 'req-' + reqSeq;
-      pending[id] = { resolve: resolve, target: target };
-      try {
-        window.parent.postMessage({ source: REQ_SRC, type: REQ_TYPE, id: id }, '*');
-      } catch (_) {
-        delete pending[id];
+      var nonce = newNonce();
+      if (!nonce) {
         resolve(null);
+        return;
       }
+      if (!NativeDateNow || !NativeString) {
+        resolve(null);
+        return;
+      }
+      var issuedAt = NativeDateNow();
+      var issuedAtText = NativeString(issuedAt);
+      pending[id] = { resolve: resolve, target: target, timeout: null };
+      if (NativeSetTimeout) {
+        pending[id].timeout = NativeSetTimeout(function () {
+          resolvePending(id, null);
+        }, REQUEST_TIMEOUT_MS);
+      }
+      var signed = signNonce(nonce, issuedAtText);
+      if (!signed) {
+        resolvePending(id, null);
+        return;
+      }
+      NativePromiseThen.call(signed, function (proof) {
+        if (!pending[id]) return;
+        try {
+          window.parent.postMessage(
+            {
+              source: REQ_SRC,
+              type: REQ_TYPE,
+              id: id,
+              nonce: nonce,
+              issued_at: issuedAt,
+              proof: proof
+            },
+            '*'
+          );
+        } catch (_) {
+          resolvePending(id, null);
+        }
+      }, function () {
+        resolvePending(id, null);
+      });
     });
   }
 
@@ -43,10 +221,10 @@ pub(crate) const PASTE_SHIM_JS: &str = r#"(function () {
   window.addEventListener('message', function (event) {
     var data = event.data;
     if (!data || typeof data !== 'object' || data.source !== RES_SRC) return;
+    if (event.source !== window.parent) return;
     var item = pending[data.id];
     if (!item) return;
-    delete pending[data.id];
-    item.resolve(data.data_url || null);
+    resolvePending(data.id, data.data_url || null);
   });
 
   // 剪贴板事件里是否已带图片（非 WebKitGTK 场景）：不介入，交 dsh 自身处理
@@ -135,6 +313,7 @@ pub(crate) const PASTE_SHIM_JS: &str = r#"(function () {
       var dt = event.clipboardData;
       if (hasImageData(dt)) return;
       if (hasTextData(dt)) return;
+      if (event.isTrusted !== true) return;
 
       var target = document.activeElement || event.target;
       if (!isPasteTarget(target)) return;
@@ -145,4 +324,6 @@ pub(crate) const PASTE_SHIM_JS: &str = r#"(function () {
       });
     }, true);
   }
-})();"#;
+})();"#
+        .replace("__DSH_CLIPBOARD_BRIDGE_SECRET__", &secret_literal)
+}

@@ -23,9 +23,26 @@ describe('secure desktop bridges', () => {
       '        .initialization_script_for_all_frames(crate::desktop::notification::NOTIFICATION_SHIM_JS)',
     ].join('\n')
 
+    expect(builderSource).toContain(
+      'let paste_shim_js = crate::desktop::paste::paste_shim_js(',
+    )
+    expect(builderSource).toContain(
+      '        .initialization_script_for_all_frames(&paste_shim_js)',
+    )
+
+    const pasteShimCreation = builderSource.indexOf(
+      'let paste_shim_js = crate::desktop::paste::paste_shim_js(',
+    )
+    const pasteShimRegistration = builderSource.indexOf(
+      '.initialization_script_for_all_frames(&paste_shim_js)',
+    )
+    const builderBuild = builderSource.indexOf('let webview_window = webview_builder.build()?')
+
     expect(builderSource).not.toContain(lateWindowsRegistration)
     expect(notificationSource).not.toContain('FrameContentLoadingEventHandler')
     expect(notificationSource).not.toContain('ExecuteScriptCompletedHandler')
+    expect(pasteShimCreation).toBeLessThan(pasteShimRegistration)
+    expect(pasteShimRegistration).toBeLessThan(builderBuild)
   })
 
   it('uses camelCase for the Tauri issuedAt command argument', () => {

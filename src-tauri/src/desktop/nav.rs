@@ -4,9 +4,9 @@
 //! 导航栏左侧三个控件（侧边栏切换 / 后退 / 前进）位于 Tauri 宿主文档（`tauri://`），
 //! 而目标页面是跨域的 dsh iframe（`http://127.0.0.1:<port>`），宿主无法直接访问
 //! iframe 的应用内部状态，只能靠 postMessage + 注入脚本桥接。
-//! 本脚本与 [`crate::desktop::notification::NOTIFICATION_SHIM_JS`] 走同一套注入通道
-//! （Windows 在 FrameCreated → ContentLoading 时 ExecuteScript，其余平台
-//! `initialization_script_for_all_frames`），因此 iframe 每次重新加载都会自动重建。
+//! 本脚本与 [`crate::desktop::notification::NOTIFICATION_SHIM_JS`] 走同一套文档创建前
+//! 注入通道（Tauri 的 `initialization_script_for_all_frames`，Windows 底层映射为
+//! WebView2 的 `AddScriptToExecuteOnDocumentCreated`），因此 iframe 每次重新加载都会自动重建。
 //!
 //! 协议（与 dsh-tauri 插件完全一致）：
 //! - 接收 `dsh://sidebar:toggle` / `dsh://page:prev` / `dsh://page:next` 命令；

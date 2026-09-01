@@ -335,7 +335,6 @@ fn sync_macos_fullscreen_menu(window: &tauri::Window<Wry>) {
 pub fn build_main_window(app: &tauri::AppHandle<Wry>) -> tauri::Result<tauri::WebviewWindow<Wry>> {
     let app_handle = app.clone();
 
-    #[cfg(not(windows))]
     let paste_shim_js = crate::desktop::paste::paste_shim_js(
         &app.state::<crate::bridge::clipboard::ClipboardBridgeState>()
             .script_secret(),
@@ -423,12 +422,13 @@ pub fn build_main_window(app: &tauri::AppHandle<Wry>) -> tauri::Result<tauri::We
         )
     });
 
-    // 非 Windows（macOS/Linux）没有 WebView2 的 FrameCreated/ContentLoading 流程，
-    // 直接用 Tauri 的 initialization_script_for_all_frames 把兼容桥、通知桥、导航桥、
-    // 样式桥与缩放快捷键桥注入所有 frame（脚本均带幂等守卫，重复注入安全）。
+    // 初始化脚本在文档创建后、页面脚本之前执行，确保剪贴板桥先捕获原生加密 API。
+    // WebView2 底层使用 AddScriptToExecuteOnDocumentCreated，并自动覆盖所有 frame。
     #[cfg(not(windows))]
     let webview_builder = webview_builder
-        .initialization_script_for_all_frames(crate::desktop::compat::ABORT_SIGNAL_ANY_SHIM_JS)
+        .initialization_script_for_all_frames(crate::desktop::compat::ABORT_SIGNAL_ANY_SHIM_JS);
+
+    let webview_builder = webview_builder
         .initialization_script_for_all_frames(crate::desktop::notification::NOTIFICATION_SHIM_JS)
         .initialization_script_for_all_frames(crate::desktop::nav::NAV_SHIM_JS)
         .initialization_script_for_all_frames(crate::desktop::style::IFRAME_STYLES_JS)

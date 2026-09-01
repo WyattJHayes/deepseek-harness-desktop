@@ -71,8 +71,8 @@ pub fn on_page_load(
     notification_handlers_registered_for_page: Arc<AtomicBool>,
 ) {
     // Windows 依赖 WebView2 的 FramePermissionRequested / FrameCreated 机制，
-    // 需要在页面加载时注册；非 Windows 已在 build_main_window 里通过
-    // initialization_script_for_all_frames 注入，这里不需要再做处理。
+    // 需要在页面加载时注册；兼容桥已在 build_main_window 里通过文档创建前的
+    // initialization_script_for_all_frames 注入，这里不需要再做脚本处理。
     if payload.event() == PageLoadEvent::Started
         && !notification_handlers_registered_for_page
             .swap(true, std::sync::atomic::Ordering::SeqCst)

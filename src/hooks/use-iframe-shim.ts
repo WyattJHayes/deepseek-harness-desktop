@@ -170,7 +170,7 @@ export function useIframeShim(iframeRef: RefObject<HTMLIFrameElement | null>) {
     }
     void invoke<{ data_url?: string } | null>('read_clipboard_image', {
       nonce,
-      issued_at: issuedAt,
+      issuedAt,
       proof,
     })
       .then(result => reply(result?.data_url ?? null))

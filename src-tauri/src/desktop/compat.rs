@@ -8,9 +8,8 @@
 //! `AbortSignal.any is not a function. (In '...', 'AbortSignal.any' is undefined)`。
 //!
 //! 本脚本与 [`crate::desktop::nav::NAV_SHIM_JS`] / [`crate::desktop::style::IFRAME_STYLES_JS`]
-//! 走同一套注入通道（Windows 在 FrameCreated → ContentLoading 时 ExecuteScript，
-//! 其余平台 `initialization_script_for_all_frames`），在 dsh 页面脚本执行之前
-//! 就位，因此主机框架与 iframe 每次重新加载都会自动重建。
+//! 在非 Windows 平台通过 `initialization_script_for_all_frames` 注入，在 dsh 页面脚本
+//! 执行之前就位；Windows WebView2 原生支持 `AbortSignal.any`，无需此兼容桥。
 //!
 //! 实现只用 ES5 兼容的语法（var / function / Array.prototype 方法），
 //! 保证即便在旧 WebKit 的严格模式环境下也能解析执行；带幂等守卫

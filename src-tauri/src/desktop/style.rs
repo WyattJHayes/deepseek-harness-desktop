@@ -1,8 +1,8 @@
 //! 注入到内嵌 dsh iframe 的自定义样式桥。
 //!
 //! 与 [`crate::desktop::nav::NAV_SHIM_JS`] / [`crate::desktop::notification::NOTIFICATION_SHIM_JS`]
-//! 走同一套注入通道（Windows 在 FrameCreated → ContentLoading 时 ExecuteScript，
-//! 其余平台 `initialization_script_for_all_frames`），因此 iframe 每次重新加载都会重建。
+//! 走同一套文档创建前注入通道（Tauri 的 `initialization_script_for_all_frames`，Windows
+//! 底层映射为 WebView2 的 `AddScriptToExecuteOnDocumentCreated`），因此 iframe 每次重新加载都会重建。
 //!
 //! 本脚本只负责把一段内置 CSS 以 `<style>` 元素注入 iframe 文档（幂等：按 id 去重）。
 //! 具体样式写在下方的 `IFRAME_CSS` 模板字符串里（当前是占位，按需填写/替换即可）。

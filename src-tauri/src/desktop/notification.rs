@@ -153,7 +153,10 @@ pub fn show_native_notification(
     builder.show().map_err(|e| e.to_string())
 }
 
-/// 在 Windows WebView2 中接管 iframe 内的通知请求并注入原生通知桥。
+/// 在 Windows WebView2 中接管 iframe 内的权限请求。
+///
+/// 兼容桥在窗口构建阶段通过文档创建前脚本注入，避免页面脚本先于剪贴板桥改写
+/// Web Crypto API；此处只注册每个 iframe 的权限事件。
 #[cfg(windows)]
 pub fn enable_notification_permissions(
     webview: tauri::webview::PlatformWebview,
@@ -161,8 +164,7 @@ pub fn enable_notification_permissions(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use rfd::{MessageButtons, MessageDialog, MessageDialogResult};
     use webview2_com::{
-        ExecuteScriptCompletedHandler, FrameContentLoadingEventHandler, FrameCreatedEventHandler,
-        FramePermissionRequestedEventHandler,
+        FrameCreatedEventHandler, FramePermissionRequestedEventHandler,
         Microsoft::Web::WebView2::Win32::{
             ICoreWebView2Frame3, ICoreWebView2Profile4, ICoreWebView2_13, ICoreWebView2_4,
             COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_KIND_AUTOPLAY,
@@ -289,11 +291,6 @@ pub fn enable_notification_permissions(
         parent: tauri::WebviewWindow<tauri::Wry>,
     ) {
         let parent_for_frame = parent.clone();
-        let clipboard_secret = parent
-            .app_handle()
-            .state::<crate::bridge::clipboard::ClipboardBridgeState>()
-            .script_secret();
-        let paste_shim_js = crate::desktop::paste::paste_shim_js(&clipboard_secret);
         let mut permission_token = 0i64;
 
         let _ = frame3.add_PermissionRequested(
@@ -321,31 +318,6 @@ pub fn enable_notification_permissions(
                 Ok(())
             })),
             &mut permission_token,
-        );
-
-        let frame_for_injection = frame3.clone();
-        let mut content_token = 0i64;
-
-        let _ = frame3.add_ContentLoading(
-            &FrameContentLoadingEventHandler::create(Box::new(move |_, _| {
-                // 通知桥、导航桥、样式桥、剪贴板图片桥与缩放快捷键桥需要 iframe 上下文执行。
-                for script in [
-                    crate::desktop::notification::NOTIFICATION_SHIM_JS,
-                    crate::desktop::nav::NAV_SHIM_JS,
-                    crate::desktop::style::IFRAME_STYLES_JS,
-                    paste_shim_js.as_str(),
-                    crate::desktop::plugin_boot::PLUGIN_BOOT_RELOAD_JS,
-                    crate::desktop::zoom::ZOOM_SHORTCUT_BRIDGE_JS,
-                ] {
-                    let script = HSTRING::from(script);
-                    let _ = frame_for_injection.ExecuteScript(
-                        &script,
-                        &ExecuteScriptCompletedHandler::create(Box::new(|_, _| Ok(()))),
-                    );
-                }
-                Ok(())
-            })),
-            &mut content_token,
         );
     }
 

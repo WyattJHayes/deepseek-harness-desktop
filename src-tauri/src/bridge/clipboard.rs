@@ -79,7 +79,7 @@ impl ClipboardBridgeState {
             .used_nonces
             .lock()
             .map_err(|_| "CLIPBOARD_AUTH_STATE: lock poisoned".to_string())?;
-        used_nonces.retain(|_, used_at| now.duration_since(*used_at) < NONCE_TTL);
+        used_nonces.retain(|_, used_at| now.duration_since(*used_at) <= NONCE_TTL);
         if used_nonces.contains_key(&nonce_bytes) {
             return Err("CLIPBOARD_NONCE_REPLAY: request already consumed".to_string());
         }
@@ -109,7 +109,10 @@ fn timestamp_is_fresh(issued_at: u64) -> bool {
     };
     let now_millis = now.as_millis();
     let issued_at = u128::from(issued_at);
-    now_millis.abs_diff(issued_at) <= NONCE_TTL.as_millis()
+    if issued_at > now_millis {
+        return false;
+    }
+    now_millis - issued_at <= NONCE_TTL.as_millis()
 }
 
 fn decode_nonce(value: &str) -> Result<[u8; NONCE_BYTES], String> {
@@ -276,6 +279,13 @@ mod tests {
             .verify_and_consume(nonce, issued_at, &proof)
             .unwrap_err();
         assert!(error.starts_with("CLIPBOARD_NONCE_EXPIRED:"));
+    }
+
+    #[test]
+    fn future_timestamp_is_rejected() {
+        let issued_at = current_timestamp_millis().saturating_add(1_000);
+
+        assert!(!timestamp_is_fresh(issued_at));
     }
 
     fn current_timestamp_millis() -> u64 {

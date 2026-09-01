@@ -9,8 +9,8 @@
 //! 贴图路径处理，从而与浏览器行为一致。
 //!
 //! 与 [`crate::desktop::notification::NOTIFICATION_SHIM_JS`] / [`crate::desktop::nav::NAV_SHIM_JS`]
-//! 走同一套注入通道（Windows 在 FrameCreated → ContentLoading 时 ExecuteScript，
-//! 其余平台 `initialization_script_for_all_frames`）。脚本带 `__dsh_clipboard_image_bridge__`
+//! 走同一套文档创建前注入通道（Tauri 的 `initialization_script_for_all_frames`，Windows
+//! 底层映射为 WebView2 的 `AddScriptToExecuteOnDocumentCreated`）。脚本带 `__dsh_clipboard_image_bridge__`
 //! 幂等守卫，重复注入安全；只处理「直接 iframe」发来的剪贴板请求，避免多层 iframe 误转发。
 
 /// 构造带会话密钥的剪贴板回退脚本。
